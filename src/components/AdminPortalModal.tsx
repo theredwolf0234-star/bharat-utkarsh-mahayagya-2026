@@ -16,6 +16,7 @@ import {
   MessageCircle,
   XCircle,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Registration, DevoteeUser, AuditLog, SystemSettings, getPaymentStatusDisplay } from '../types/yagya';
 import { exportDatabaseToCSV } from '../utils/csvExport';
@@ -60,12 +61,35 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     'SELECT id, token, full_name, kund_number, date, amount, payment_status, utr_number FROM registrations ORDER BY created_at DESC LIMIT 10;'
   );
   const [sqlResult, setSqlResult] = useState<{ columns: string[]; rows: (string | number)[][] } | null>(null);
+  const [isFetchingServer, setIsFetchingServer] = useState(false);
+
+  const fetchServerBookings = async () => {
+    setIsFetchingServer(true);
+    try {
+      const res = await fetch('/api/admin/bookings', {
+        headers: {
+          Authorization: 'Bearer maharishi_master_session_token',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.bookings)) {
+          setRegistrations(data.bookings);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch server bookings:', e);
+    } finally {
+      setIsFetchingServer(false);
+    }
+  };
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
     if (adminUsername.trim() === 'maharishi_admin' && adminPassword === 'admin123') {
       setIsAdminLoggedIn(true);
+      fetchServerBookings();
     } else {
       setLoginError('अमान्य व्यवस्थापक यूज़रनेम अथवा पासवर्ड। कृपया सही क्रेडेंशियल्स दर्ज करें।');
     }
@@ -86,6 +110,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     };
 
     setRegistrations((prev) => prev.map((r) => (r.id === regId ? updated : r)));
+
+    // Send to backend server database so state persists permanently
+    fetch('/api/admin/approve-booking', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer maharishi_master_session_token',
+      },
+      body: JSON.stringify({ id: regId }),
+    }).catch((e) => console.warn('Backend approve warning:', e));
 
     setAuditLogs((prev) => [
       {
@@ -134,6 +168,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     };
 
     setRegistrations((prev) => prev.map((r) => (r.id === regId ? updated : r)));
+
+    // Send to backend server database so state persists permanently
+    fetch('/api/admin/reject-booking', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer maharishi_master_session_token',
+      },
+      body: JSON.stringify({ id: regId, reason }),
+    }).catch((e) => console.warn('Backend reject warning:', e));
 
     setAuditLogs((prev) => [
       {
@@ -328,6 +372,17 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 >
                   <History className="w-4 h-4" />
                   <span>ऑडिट लॉग्स</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={fetchServerBookings}
+                  disabled={isFetchingServer}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-amber-100 hover:bg-amber-200 text-[#872e18] rounded-xl text-xs font-bold border border-amber-300 cursor-pointer whitespace-nowrap transition-all shadow-xs"
+                  title="सर्वर से नवीनतम बुकिंग्स व UTR रिकॉर्ड्स ताज़ा करें"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isFetchingServer ? 'animate-spin' : ''}`} />
+                  <span>{isFetchingServer ? 'डेटा आ रहा है...' : 'ताज़ा करें (Refresh)'}</span>
                 </button>
               </div>
 

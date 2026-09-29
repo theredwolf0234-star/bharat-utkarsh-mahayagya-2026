@@ -96,6 +96,34 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
       return [updatedReg, ...prev];
     });
 
+    // Synchronize to backend server database so it appears in Admin Portal on all devices
+    try {
+      fetch('/api/payment/submit-proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          registrationId: updatedReg.id,
+          token: updatedReg.token,
+          registration: updatedReg,
+          utrNumber: updatedReg.utrNumber,
+          paymentProofUrl: screenshotData || undefined,
+          isCounterPay: isCounter,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.registration) {
+            setActiveReg(data.registration);
+            setRegistrations((prev) =>
+              prev.map((r) => (r.token === data.registration.token ? data.registration : r))
+            );
+          }
+        })
+        .catch((err) => console.warn('Submit-proof background sync warning:', err));
+    } catch (e) {
+      console.warn('Network sync note:', e);
+    }
+
     setAuditLogs((prev) => [
       {
         id: `audit-${Date.now()}`,
@@ -352,7 +380,24 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
-              onClick={() => {
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/registrations/lookup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: activeReg.token, mobile: activeReg.mobile }),
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.result) {
+                      setActiveReg(data.result);
+                      setRegistrations((prev) =>
+                        prev.map((r) => (r.token === data.result.token ? data.result : r))
+                      );
+                      return;
+                    }
+                  }
+                } catch (e) {}
                 const refreshed = allRegistrations.find((r) => r.token === activeReg.token);
                 if (refreshed) setActiveReg(refreshed);
               }}

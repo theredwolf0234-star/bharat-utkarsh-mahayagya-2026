@@ -220,6 +220,15 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
       createdAt: new Date().toISOString(),
     };
 
+    // Trigger backend server API so it reserves the temporary hold immediately
+    try {
+      fetch('/api/reservations/temp-hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tempRegistration),
+      }).catch((e) => console.warn('Background temp-hold warning:', e));
+    } catch (e) {}
+
     onProceedToPayment(tempRegistration);
   };
 

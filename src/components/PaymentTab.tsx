@@ -24,6 +24,14 @@ import {
   FileCheck
 } from 'lucide-react';
 
+const triggerCelebration = () => {
+  try {
+    if (typeof window !== 'undefined' && (window as any).confetti) {
+      (window as any).confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    }
+  } catch (e) {}
+};
+
 interface Props {
   pendingData: any | null;
   confirmedRegistration: Registration | null;
@@ -178,9 +186,7 @@ export const PaymentTab: React.FC<Props> = ({
           saveLatestUserBooking(fresh);
 
           if (fresh.paymentStatus === 'paid') {
-            try {
-              confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-            } catch (e) {}
+            triggerCelebration();
             onPaymentSuccess(fresh);
           }
         }
@@ -257,9 +263,7 @@ export const PaymentTab: React.FC<Props> = ({
       );
 
       if (updatedReg.paymentStatus === 'paid') {
-        try {
-          confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-        } catch (e) {}
+        triggerCelebration();
         onPaymentSuccess(updatedReg);
       }
 

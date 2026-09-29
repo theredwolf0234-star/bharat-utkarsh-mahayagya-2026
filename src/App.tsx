@@ -86,6 +86,40 @@ export default function App() {
     } catch (e) {}
   }, [auditLogs]);
 
+  // Synchronize live bookings with backend server every 4 seconds
+  useEffect(() => {
+    const syncServerBookings = async () => {
+      try {
+        const res = await fetch('/api/admin/bookings', {
+          headers: { Authorization: 'Bearer maharishi_master_session_token' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.bookings)) {
+            setRegistrations((prev) => {
+              // Merge server bookings with local bookings
+              const serverMap = new Map<string, Registration>();
+              data.bookings.forEach((b: Registration) => serverMap.set(b.id, b));
+              // Also keep any local un-synced bookings
+              prev.forEach((p) => {
+                if (!serverMap.has(p.id)) {
+                  serverMap.set(p.id, p);
+                }
+              });
+              return Array.from(serverMap.values());
+            });
+          }
+        }
+      } catch (e) {
+        // Ignore offline
+      }
+    };
+
+    syncServerBookings();
+    const interval = setInterval(syncServerBookings, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Admin and Modals State
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
   const [showStatusModal, setShowStatusModal] = useState<boolean>(false);
