@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import confetti from 'canvas-confetti';
 import { Registration, PaymentStatus } from '../types/yagya';
 import { validateUpiUtr } from '../utils/utrValidator';
 import { saveLatestUserBooking } from '../utils/storage';

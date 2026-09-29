@@ -1,40 +1,36 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useEffect } from 'react';
-import { Registration, YAGYA_DATES, DevoteeUser } from './types/yagya';
-import { 
-  getSavedRegistrations, 
-  saveRegistrations, 
-  addRegistration, 
-  getLatestUserBooking,
-  saveLatestUserBooking,
-} from './utils/storage';
-import { Language, translations } from './utils/i18n';
-import { VedicHeader } from './components/VedicHeader';
-import { HomeTab } from './components/HomeTab';
-import { RegistrationTab } from './components/RegistrationTab';
-import { PaymentTab } from './components/PaymentTab';
-import { PrintableSlip } from './components/PrintableSlip';
-import { AdminPanelModal } from './components/AdminPanelModal';
-import { SupabaseSqlEditor } from './components/SupabaseSqlEditor';
-import { DatabaseDashboard } from './components/DatabaseDashboard';
-import { DevoteePortal } from './components/DevoteePortal';
-import { Search, Printer, Database, Lock, Clock, CheckCircle2, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  TOTAL_KUNDS,
+  RESERVED_KUNDS_COUNT,
+  YAGYA_DATES,
+  INITIAL_REGISTRATIONS,
+  INITIAL_DEVOTEES,
+} from './constants/yagya';
+import {
+  Registration,
+  DevoteeUser,
+  AuditLog,
+  SystemSettings,
+  KundItem,
+  KundSummary,
+} from './types/yagya';
+import { Header } from './components/Header';
+import { Footer } from './components/Footer';
+import { HomeView } from './components/HomeView';
+import { RegistrationStepView } from './components/RegistrationStepView';
+import { PaymentStepView } from './components/PaymentStepView';
+import { DevoteeTicketsPortal } from './components/DevoteeTicketsPortal';
+import { AdminPortalModal } from './components/AdminPortalModal';
+import { PrintableSlipModal } from './components/PrintableSlipModal';
+import { StatusLookupModal } from './components/StatusLookupModal';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'home' | 'register' | 'lookup' | 'admin' | 'database' | 'map' | 'tickets'>('home');
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  const [currentView, setCurrentView] = useState<'home' | 'register' | 'tickets'>('home');
+  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [selectedDate, setSelectedDate] = useState<string>(YAGYA_DATES[0].date);
+  const [preselectedKund, setPreselectedKund] = useState<number | null>(null);
 
-  // Persistent Language selection
-  const [lang, setLang] = useState<Language>(() => {
-    const saved = localStorage.getItem('yagya_lang');
-    return (saved as Language) || 'hi';
-  });
-
-  // Devotee User Account State
+  // Devotee Authentication State
   const [currentUser, setCurrentUser] = useState<DevoteeUser | null>(() => {
     try {
       const saved = localStorage.getItem('yagya_devotee_user');
@@ -44,329 +40,226 @@ export default function App() {
     }
   });
 
-  const [isTestMode, setIsTestMode] = useState<boolean>(false);
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(YAGYA_DATES[0].date);
-  const [preselectedKund, setPreselectedKund] = useState<number | null>(null);
-
-  // Registration & Payment state
-  const [pendingPaymentData, setPendingPaymentData] = useState<any | null>(null);
-  const [currentPaymentReg, setCurrentPaymentReg] = useState<Registration | null>(null);
-  const [printSlipReg, setPrintSlipReg] = useState<Registration | null>(null);
-
-  // Modals
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [showSqlEditorModal, setShowSqlEditorModal] = useState(false);
-
-  const t = translations[lang] || translations.hi;
-
-  const handleLanguageChange = (newLang: Language) => {
-    setLang(newLang);
-    localStorage.setItem('yagya_lang', newLang);
-  };
-
-  const handleUserLogin = (user: DevoteeUser, token: string) => {
-    setCurrentUser(user);
-    setCurrentView('tickets');
-    loadData();
-  };
-
-  const handleUserLogout = () => {
-    const token = localStorage.getItem('yagya_devotee_token');
-    if (token) {
-      fetch('/api/user/logout', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {});
-    }
-    localStorage.removeItem('yagya_devotee_token');
-    localStorage.removeItem('yagya_devotee_user');
-    setCurrentUser(null);
-    setCurrentView('home');
-    loadData();
-  };
-
-  // Load system settings (test mode, expiry)
-  const loadSettings = async () => {
+  // Persistent / In-memory Database State (Fresh Start for Kunds 10-108)
+  const [registrations, setRegistrations] = useState<Registration[]>(() => {
     try {
-      const res = await fetch('/api/settings');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.settings) {
-          setIsTestMode(Boolean(data.settings.testModeEnabled));
-        }
-      }
-    } catch (e) {}
-  };
-
-  // Load occupancy data for tracker and devotee tickets
-  const loadData = async () => {
-    // 1. Latest user booking for immediate state
-    const latestUserBooking = getLatestUserBooking();
-    if (latestUserBooking) {
-      setCurrentPaymentReg(latestUserBooking);
-    }
-
-    try {
-      // 2. Fetch occupancy / personal tickets from backend
-      const userToken = localStorage.getItem('yagya_devotee_token');
-      const headers: Record<string, string> = {};
-      if (userToken) headers['Authorization'] = `Bearer ${userToken}`;
-
-      const res = await fetch('/api/registrations', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.registrations && Array.isArray(data.registrations)) {
-          setRegistrations(data.registrations);
-          return;
-        }
-      }
+      const saved = localStorage.getItem('yagya_registrations');
+      return saved ? JSON.parse(saved) : INITIAL_REGISTRATIONS;
     } catch (e) {
-      console.warn('Initial data load notice:', e);
+      return INITIAL_REGISTRATIONS;
     }
-  };
+  });
+
+  const [devotees, setDevotees] = useState<DevoteeUser[]>(() => {
+    try {
+      const saved = localStorage.getItem('yagya_devotees');
+      return saved ? JSON.parse(saved) : INITIAL_DEVOTEES;
+    } catch (e) {
+      return INITIAL_DEVOTEES;
+    }
+  });
+
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
+    try {
+      const saved = localStorage.getItem('yagya_audit_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
 
   useEffect(() => {
-    loadSettings();
-    loadData();
-  }, []);
+    try {
+      localStorage.setItem('yagya_registrations', JSON.stringify(registrations));
+    } catch (e) {}
+  }, [registrations]);
 
-  // Handle proceeding from Step 1 & 2 (Form) to Step 3 (Payment)
-  const handleProceedToPayment = (formData: any) => {
-    setPendingPaymentData(formData);
-    setCurrentPaymentReg(formData);
-    setCurrentStep(3);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  useEffect(() => {
+    try {
+      localStorage.setItem('yagya_devotees', JSON.stringify(devotees));
+    } catch (e) {}
+  }, [devotees]);
 
-  // Handle successful payment verification and token generation (Step 4)
-  const handlePaymentSuccess = (confirmedReg: Registration) => {
-    const updatedList = addRegistration(confirmedReg);
-    setRegistrations(updatedList);
-    saveLatestUserBooking(confirmedReg);
-    setCurrentPaymentReg(confirmedReg);
-    setCurrentStep(4);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  useEffect(() => {
+    try {
+      localStorage.setItem('yagya_audit_logs', JSON.stringify(auditLogs));
+    } catch (e) {}
+  }, [auditLogs]);
 
-  // Handle start registration from Home page or Hawan Kund Tracker
-  const handleStartRegistration = (kundNumber?: number) => {
-    if (kundNumber) {
-      setPreselectedKund(kundNumber);
-    } else {
-      setPreselectedKund(null);
+  // Admin and Modals State
+  const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+  const [showStatusModal, setShowStatusModal] = useState<boolean>(false);
+  const [printSlipReg, setPrintSlipReg] = useState<Registration | null>(null);
+  const [pendingPaymentData, setPendingPaymentData] = useState<Registration | null>(null);
+  const [currentPaymentReg, setCurrentPaymentReg] = useState<Registration | null>(null);
+
+  // System settings state
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
+    expiryMinutes: 15,
+    upiId: 'maharishivedvigyan@sbi',
+    pricePerPerson: 1100,
+    testModeEnabled: false,
+  });
+
+  const kundSummary = useMemo<KundSummary>(() => {
+    const dateRegs = registrations.filter(
+      (r) => r.date === selectedDate && r.paymentStatus !== 'rejected' && r.paymentStatus !== 'expired'
+    );
+    const map = new Map<number, KundItem>();
+    for (let i = 1; i <= TOTAL_KUNDS; i++) {
+      map.set(i, {
+        kundNumber: i,
+        formattedNumber: String(i).padStart(3, '0'),
+        isReserved: i <= RESERVED_KUNDS_COUNT,
+        bookedCount: 0,
+        occupants: [],
+      });
     }
+    dateRegs.forEach((r) => {
+      const k = map.get(r.kundNumber);
+      if (k) {
+        k.bookedCount += 1;
+        k.occupants.push(r);
+      }
+    });
+
+    const list = Array.from(map.values());
+    const bookable = list.filter((k) => !k.isReserved);
+    const totalAvailable = bookable.filter((k) => k.bookedCount === 0).length;
+    const totalPartial = bookable.filter((k) => k.bookedCount === 1).length;
+    const totalFull = bookable.filter((k) => k.bookedCount >= 2).length;
+
+    return { list, totalAvailable, totalPartial, totalFull, totalReserved: RESERVED_KUNDS_COUNT };
+  }, [registrations, selectedDate]);
+
+  const handleStartBooking = (kundNum: number | null = null) => {
+    setPreselectedKund(kundNum);
     setCurrentStep(1);
     setCurrentView('register');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleProceedToPayment = (tempReg: Registration) => {
+    setPendingPaymentData(tempReg);
+    setCurrentPaymentReg(tempReg);
+    setCurrentStep(3);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
-    <div className="min-h-screen bg-[#faf5eb] flex flex-col justify-between text-stone-900 selection:bg-amber-500 selection:text-white">
-      {/* Vedic Header with persistent language selector */}
-      <VedicHeader
+    <div className="min-h-screen bg-[#faf5eb] flex flex-col justify-between text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
+      {/* Top Pure Vedic Header with Navigation and Stepper */}
+      <Header
         currentView={currentView}
-        onNavigate={(view) => {
-          if (view === 'lookup') {
-            setCurrentView('tickets');
-          } else if (view === 'admin') {
-            setShowAdminModal(true);
-          } else {
-            setCurrentView(view);
-          }
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        setCurrentView={(view) => setCurrentView(view as 'home' | 'register' | 'tickets')}
         currentStep={currentStep}
-        onStepClick={(step) => setCurrentStep(step)}
-        lang={lang}
-        onLanguageChange={handleLanguageChange}
-        isTestMode={isTestMode}
+        setCurrentStep={setCurrentStep}
         currentUser={currentUser}
+        onStartBooking={handleStartBooking}
+        onOpenStatusLookup={() => setShowStatusModal(true)}
       />
 
-      {/* Main Content Area */}
+      {/* Main Content Body */}
       <main className="flex-1">
-        {/* VIEW 1: HOME PAGE */}
         {currentView === 'home' && (
-          <HomeTab
-            registrations={registrations}
+          <HomeView
             selectedDate={selectedDate}
-            onSelectDate={(date) => setSelectedDate(date)}
-            onStartRegistration={() => handleStartRegistration()}
-            onOpenLookup={() => {
-              setCurrentView('tickets');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            onOpenTickets={() => {
-              setCurrentView('tickets');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            onOpenSlip={(reg) => setPrintSlipReg(reg)}
-            lang={lang}
+            onSelectDate={setSelectedDate}
+            kundSummary={kundSummary}
+            onStartBooking={handleStartBooking}
+            onOpenTickets={() => setCurrentView('tickets')}
+            onOpenStatusLookup={() => setShowStatusModal(true)}
           />
         )}
 
-        {/* VIEW 2: REGISTRATION & PAYMENT FLOW (STEPS 1-4) */}
         {currentView === 'register' && (
-          <div>
+          <div className="w-full pb-14 bg-[#faf5eb] min-h-[80vh]">
             {currentStep <= 2 && (
-              <RegistrationTab
-                registrations={registrations}
+              <RegistrationStepView
+                initialKund={preselectedKund}
+                selectedDate={selectedDate}
+                currentUser={currentUser}
+                devotees={devotees}
+                setDevotees={setDevotees}
+                setCurrentUser={setCurrentUser}
                 onProceedToPayment={handleProceedToPayment}
-                initialKundNumber={preselectedKund}
-                initialDate={selectedDate}
-                lang={lang}
-                currentUser={currentUser}
+                kundSummary={kundSummary}
+                registrations={registrations}
               />
             )}
-
             {currentStep >= 3 && (
-              <PaymentTab
-                pendingData={pendingPaymentData}
-                confirmedRegistration={currentPaymentReg}
+              <PaymentStepView
+                pendingReg={currentPaymentReg || pendingPaymentData}
+                systemSettings={systemSettings}
                 allRegistrations={registrations}
-                onPaymentSuccess={handlePaymentSuccess}
-                onGoToRegistration={() => {
-                  setPendingPaymentData(null);
-                  setCurrentStep(1);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
+                setRegistrations={setRegistrations}
+                setAuditLogs={setAuditLogs}
                 onOpenSlip={(reg) => setPrintSlipReg(reg)}
-                lang={lang}
-                isTestMode={isTestMode}
+                onGoHome={() => setCurrentView('home')}
+                onGoBooking={() => {
+                  setCurrentStep(1);
+                  setCurrentView('register');
+                }}
               />
             )}
           </div>
         )}
 
-        {/* VIEW 3: DEVOTEE TICKETS & LOGIN/SIGNUP PORTAL */}
-        {(currentView === 'tickets' || currentView === 'lookup') && (
-          <div className="w-full pb-14 font-sans bg-[#faf5eb] min-h-screen pt-4 sm:pt-6">
-            <div className="max-w-4xl mx-auto px-4">
-              <DevoteePortal
-                lang={lang}
-                currentUser={currentUser}
-                onUserLogin={handleUserLogin}
-                onUserLogout={handleUserLogout}
-                onOpenPrintSlip={(reg) => setPrintSlipReg(reg)}
-                onBookNewKund={() => handleStartRegistration()}
-                onSelectPaymentReg={(reg) => {
-                  setPendingPaymentData(reg);
-                  setCurrentPaymentReg(reg);
-                  setCurrentStep(3);
-                  setCurrentView('register');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* VIEW 4: DATABASE MANAGEMENT & LIVE STUDIO */}
-        {currentView === 'database' && (
-          <DatabaseDashboard
+        {currentView === 'tickets' && (
+          <DevoteeTicketsPortal
+            currentUser={currentUser}
+            setCurrentUser={setCurrentUser}
+            devotees={devotees}
+            setDevotees={setDevotees}
+            registrations={registrations}
             onOpenSlip={(reg) => setPrintSlipReg(reg)}
-            onNavigateHome={() => setCurrentView('home')}
+            onBookNew={() => handleStartBooking(null)}
           />
         )}
       </main>
 
-      {/* Printable Slip Modal */}
+      {/* PRINTABLE SLIP MODAL (Without QR code, with direct print preview & PDF save) */}
       {printSlipReg && (
-        <PrintableSlip
+        <PrintableSlipModal
           registration={printSlipReg}
           onClose={() => setPrintSlipReg(null)}
-          lang={lang}
         />
       )}
 
-      {/* Admin Panel Modal */}
-      {showAdminModal && (
-        <AdminPanelModal
-          onClose={() => {
-            setShowAdminModal(false);
-            loadSettings();
-            loadData();
+      {/* STATUS LOOKUP MODAL (Quick check payment / token status) */}
+      {showStatusModal && (
+        <StatusLookupModal
+          onClose={() => setShowStatusModal(false)}
+          registrations={registrations}
+          onOpenSlip={(reg) => {
+            setShowStatusModal(false);
+            setPrintSlipReg(reg);
           }}
-          onOpenSlip={(reg) => setPrintSlipReg(reg)}
-          onRefreshData={loadData}
-          lang={lang}
         />
       )}
 
-      {/* Standalone Supabase SQL Editor Modal */}
-      {showSqlEditorModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl border-2 border-amber-400 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-stone-200 pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
-                  <Database className="w-5 h-5 text-emerald-700" />
-                </span>
-                <div>
-                  <h3 className="font-heading font-bold text-base sm:text-lg text-stone-900">
-                    Supabase PostgreSQL SQL Editor & Connection
-                  </h3>
-                  <p className="text-xs text-stone-500 font-mono">
-                    Project: zpbnsolzmrsyoddxzaqj
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowSqlEditorModal(false)}
-                className="text-stone-400 hover:text-stone-700 text-xl font-bold p-1 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <SupabaseSqlEditor />
-          </div>
-        </div>
+      {/* ADMIN & DATABASE MANAGEMENT MODAL */}
+      {showAdminModal && (
+        <AdminPortalModal
+          onClose={() => setShowAdminModal(false)}
+          registrations={registrations}
+          setRegistrations={setRegistrations}
+          devotees={devotees}
+          auditLogs={auditLogs}
+          setAuditLogs={setAuditLogs}
+          systemSettings={systemSettings}
+          setSystemSettings={setSystemSettings}
+          onOpenSlip={(reg) => setPrintSlipReg(reg)}
+        />
       )}
 
-      {/* Footer */}
-      <footer className="no-print bg-[#240608] text-amber-100/90 py-6 border-t border-[#3d0d12] text-xs">
-        <div className="max-w-4xl mx-auto px-4 text-center space-y-2">
-          <div className="text-amber-200 font-medium">
-            🕉️ {t.appName} — "{t.tagline}"
-          </div>
-          <div className="text-stone-400 text-[11px]">
-            {t.venueAddress}
-          </div>
-
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <button
-              onClick={() => {
-                setCurrentView('tickets');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="inline-flex items-center gap-1.5 text-amber-200 bg-amber-950/60 hover:bg-amber-900 px-3 py-1 rounded-lg border border-amber-400/30 transition-all cursor-pointer text-[11px]"
-            >
-              <span>🎟️ यजमान प्रवेश पत्र व लॉगिन</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setCurrentView('database');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="inline-flex items-center gap-1.5 text-emerald-300 hover:text-emerald-200 bg-emerald-950/60 hover:bg-emerald-950/90 px-3 py-1 rounded-lg border border-emerald-500/40 transition-all cursor-pointer text-[11px]"
-            >
-              <Database className="w-3.5 h-3.5 text-emerald-400" />
-              <span>⚡ Supabase SQL एडिटर एवं डेटाबेस</span>
-            </button>
-
-            <button
-              onClick={() => setShowAdminModal(true)}
-              className="inline-flex items-center gap-1.5 text-amber-300/80 hover:text-amber-200 bg-black/40 hover:bg-black/60 px-3 py-1 rounded-lg border border-stone-700 transition-all cursor-pointer text-[11px]"
-            >
-              <Lock className="w-3.5 h-3.5 text-amber-400" />
-              <span>{t.adminPortal}</span>
-            </button>
-          </div>
-        </div>
-      </footer>
+      {/* HIGHLIGHTED FOOTER WITH DEDICATED ADMIN & DATABASE PORTAL BUTTON */}
+      <Footer
+        onGoHome={() => setCurrentView('home')}
+        onStartBooking={() => handleStartBooking(null)}
+        onOpenTickets={() => setCurrentView('tickets')}
+        onOpenAdmin={() => setShowAdminModal(true)}
+      />
     </div>
   );
 }
