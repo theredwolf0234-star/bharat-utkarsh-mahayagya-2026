@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --maharishi-maroon: #4a0e17;
+    --maharishi-red: #8a1523;
+    --maharishi-crimson: #b31b2c;
+    --maharishi-gold: #d49a37;
+    --maharishi-yellow: #f8c045;
+    --maharishi-saffron: #f58220;
+    --maharishi-cream: #fff9f0;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', 'Noto Sans Devanagari', system-ui, -apple-system, sans-serif;
+  }
+
+  h1, h2, h3, .font-heading {
+    font-family: 'Rozha One', 'Yatra One', 'Noto Sans Devanagari', serif;
+  }
+
+  .font-vedic {
+    font-family: 'Yatra One', 'Rozha One', 'Noto Sans Devanagari', serif;
+  }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #fdf6ec;
+}
+::-webkit-scrollbar-thumb {
+  background: #e2b168;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b31b2c;
+}
+
+/* Bulletproof Print Engine Styles */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 5mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Hide entire page elements */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Make ONLY the printable slip area and its contents visible */
+  #printable-slip-area,
+  #printable-slip-area * {
+    visibility: visible !important;
+  }
+
+  #printable-slip-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    border: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Hide navigation, buttons, footers, toolbars, and background elements */
+  header, footer, nav, button, .no-print, [aria-hidden="true"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+}
+
+@media screen {
+  .print-only {
+    display: none;
+  }
+}

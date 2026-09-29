@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: bharat-utkarsh-mahayagya-2026
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        value: https://zpbnsolzmrsyoddxzaqj.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: sb_publishable_WW-vmr513N7070fDU-unOA__9Jl0lCe
