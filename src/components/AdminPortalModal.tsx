@@ -229,39 +229,39 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-6xl w-full shadow-2xl border-2 border-stone-300 my-auto overflow-hidden animate-in fade-in flex flex-col max-h-[95vh]">
-        <div className="bg-[#4a0e17] text-white px-5 sm:px-6 py-4 flex items-center justify-between border-b border-amber-600 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-300 border border-amber-400/30">
+        <div className="bg-[#4a0e17] text-white px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between border-b border-amber-600 shrink-0 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-300 border border-amber-400/30 shrink-0">
               <ShieldCheck className="w-5 h-5 text-amber-400" />
             </div>
-            <div>
-              <h3 className="font-serif font-bold text-base sm:text-lg text-[#ffea79]">
-                यज्ञ नियंत्रण एवं व्यवस्थापक पोर्टल (Admin & Database Portal)
+            <div className="min-w-0">
+              <h3 className="font-serif font-bold text-sm sm:text-lg text-[#ffea79] truncate">
+                व्यवस्थापक पोर्टल (Admin Portal)
               </h3>
-              <p className="text-[11px] text-amber-200/80">
-                श्री महर्षि वेदविज्ञान संस्थान • सुरक्षित प्रशासक नियंत्रण कक्ष
+              <p className="text-[10px] sm:text-[11px] text-amber-200/80 truncate">
+                श्री महर्षि वेदविज्ञान संस्थान • प्रशासक कक्ष
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {isAdminLoggedIn && (
               <button
                 onClick={() => setIsAdminLoggedIn(false)}
-                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-amber-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                className="px-2.5 sm:px-3 py-1.5 bg-white/10 hover:bg-white/20 text-amber-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span>लॉग आउट</span>
+                <span className="hidden min-[360px]:inline">लॉग आउट</span>
               </button>
             )}
-            <button onClick={onClose} className="text-amber-200 hover:text-white p-1 rounded-md text-xl cursor-pointer">
+            <button onClick={onClose} className="text-amber-200 hover:text-white p-1 rounded-md text-xl cursor-pointer" aria-label="बंद करें">
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-[#faf8f5]">
+        <div className="p-3 sm:p-6 overflow-y-auto flex-1 bg-[#faf8f5]">
           {!isAdminLoggedIn ? (
-            <div className="max-w-md mx-auto py-8">
+            <div className="max-w-md mx-auto py-4 sm:py-8">
               <div className="bg-white border border-stone-300 rounded-3xl p-6 sm:p-8 shadow-sm space-y-4">
                 <div className="text-center space-y-1 mb-4">
                   <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto text-amber-800">
@@ -317,7 +317,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="flex items-center gap-2 border-b border-stone-200 pb-2 overflow-x-auto">
+              <div className="flex items-center gap-2 border-b border-stone-200 pb-2 overflow-x-auto no-scrollbar">
                 <button
                   onClick={() => setAdminTab('pending')}
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
@@ -936,13 +936,13 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-2 border-t border-stone-200">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2 border-t border-stone-200">
                       <button
                         type="button"
                         onClick={handleConfirmReject}
                         className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        <XCircle className="w-4 h-4" />
+                        <XCircle className="w-4 h-4 shrink-0" />
                         <span>अस्वीकृति की पुष्टि करें (Confirm Reject)</span>
                       </button>
                       <button
@@ -959,21 +959,22 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
               {/* APPROVAL & WHATSAPP TOAST */}
               {approvedToast && (
-                <div className="fixed bottom-6 right-6 z-60 bg-stone-900 text-white p-4 rounded-2xl shadow-2xl border-2 border-emerald-400 flex items-center gap-3 animate-in slide-in-from-bottom">
+                <div className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md z-60 bg-stone-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 border-emerald-400 flex items-center gap-3 animate-in slide-in-from-bottom">
                   <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white shrink-0 font-bold">
                     ✓
                   </div>
-                  <div className="text-xs">
-                    <span className="font-bold text-emerald-400 block text-sm">
+                  <div className="text-xs min-w-0">
+                    <span className="font-bold text-emerald-400 block text-xs sm:text-sm">
                       भुगतान सत्यापित एवं स्वीकृत!
                     </span>
-                    <span className="text-stone-300">
+                    <span className="text-stone-300 break-words">
                       टोकन {approvedToast.token} कन्फर्म हो गया और {approvedToast.name} (+91 {approvedToast.mobile}) के WhatsApp पर भेजा गया।
                     </span>
                   </div>
                   <button
                     onClick={() => setApprovedToast(null)}
-                    className="text-stone-400 hover:text-white p-1 text-sm font-bold cursor-pointer ml-2"
+                    className="text-stone-400 hover:text-white p-1 text-sm font-bold cursor-pointer ml-auto shrink-0"
+                    aria-label="बंद करें"
                   >
                     ✕
                   </button>

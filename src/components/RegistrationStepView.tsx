@@ -233,9 +233,9 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 pt-6 space-y-6">
-      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 shadow-xs flex items-start gap-3">
-        <ShieldCheck className="w-6 h-6 text-[#8a1523] shrink-0 mt-0.5" />
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 space-y-4 sm:space-y-6">
+      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-3.5 sm:p-4 shadow-xs flex items-start gap-2.5 sm:gap-3">
+        <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-[#8a1523] shrink-0 mt-0.5" />
         <div className="text-xs sm:text-sm text-stone-800 leading-relaxed">
           <span className="font-bold text-[#8a1523]">महत्वपूर्ण नियम व व्यवस्थापक सत्यापन:</span>
           <p className="mt-0.5 text-stone-700">
@@ -244,40 +244,40 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border-2 border-amber-200 p-5 shadow-xs">
+      <div className="bg-white rounded-2xl sm:rounded-3xl border-2 border-amber-200 p-4 sm:p-5 shadow-xs">
         {currentUser ? (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-50 border border-emerald-300 rounded-2xl p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-50 border border-emerald-300 rounded-2xl p-3.5 sm:p-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-lg">
+              <div className="w-10 h-10 rounded-full bg-emerald-700 text-white flex items-center justify-center font-bold text-lg shrink-0">
                 {currentUser.fullName ? currentUser.fullName.charAt(0) : '✓'}
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs text-emerald-800 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                  <span>प्रमाणित साधक खाता लॉगिन है</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                  <span className="truncate">प्रमाणित साधक खाता लॉगिन है</span>
                 </div>
-                <div className="text-sm font-bold text-stone-900 font-serif">
+                <div className="text-xs sm:text-sm font-bold text-stone-900 font-serif truncate">
                   {currentUser.fullName} (+91 {currentUser.mobile})
                 </div>
               </div>
             </div>
-            <span className="text-xs text-emerald-900 bg-emerald-100 px-3 py-1 rounded-xl border border-emerald-300 font-medium">
+            <span className="text-[11px] sm:text-xs text-emerald-900 bg-emerald-100 px-3 py-1 rounded-xl border border-emerald-300 font-medium self-start sm:self-auto">
               अगली बार इसी खाते में रसीद सुरक्षित रहेगी
             </span>
           </div>
         ) : (
           <div>
-            <div className="flex items-center justify-between mb-3 border-b border-stone-200 pb-2.5">
+            <div className="flex flex-col min-[420px]:flex-row min-[420px]:items-center justify-between gap-1.5 mb-3 border-b border-stone-200 pb-2.5">
               <div className="flex items-center gap-2">
-                <User className="w-5 h-5 text-[#8a1523]" />
-                <span className="font-bold text-sm sm:text-base text-stone-900 font-serif">
-                  साधक खाता एवं क्रेडेंशियल्स (भविष्य में रसीद देखने हेतु)
+                <User className="w-4 h-4 sm:w-5 sm:h-5 text-[#8a1523] shrink-0" />
+                <span className="font-bold text-xs sm:text-base text-stone-900 font-serif">
+                  साधक खाता एवं क्रेडेंशियल्स (रसीद देखने हेतु)
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsExistingLoginMode(!isExistingLoginMode)}
-                className="text-xs font-bold text-[#8a1523] hover:underline cursor-pointer"
+                className="text-xs font-bold text-[#8a1523] hover:underline cursor-pointer self-start min-[420px]:self-auto"
               >
                 {isExistingLoginMode ? 'नया साधक खाता बनाएं' : 'पहले से खाता है? लॉगिन करें'}
               </button>
@@ -335,10 +335,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
             ) : (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-stone-700">
                 <div className="flex items-center gap-1.5 font-bold text-amber-950 mb-1">
-                  <Sparkles className="w-4 h-4 text-amber-700" />
+                  <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
                   <span>रसीद सुरक्षित रखने हेतु पासवर्ड बनाएं:</span>
                 </div>
-                <p>
+                <p className="leading-relaxed">
                   नीचे दिए गए फ़ॉर्म में अपना 10 अंकों का मोबाइल नंबर और एक सरल पासवर्ड बनाएं। यह सुरक्षित हो जाएगा, जिससे अगली बार आप केवल मोबाइल और पासवर्ड डालकर अपनी स्वीकृत रसीद व पास डाउनलोड कर सकेंगे।
                 </p>
               </div>
@@ -347,13 +347,13 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
         )}
       </div>
 
-      <div className="bg-white rounded-3xl shadow-sm border border-[#e8ddcb] p-6 sm:p-8">
-        <h2 className="text-xl sm:text-2xl font-bold font-serif text-stone-900 border-b border-stone-200 pb-3 mb-5">
+      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-[#e8ddcb] p-4 sm:p-8">
+        <h2 className="text-lg sm:text-2xl font-bold font-serif text-stone-900 border-b border-stone-200 pb-3 mb-5">
           हवन कुंड यजमान पंजीकरण फ़ॉर्म
         </h2>
 
-        <form onSubmit={handleSubmitBooking} className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <form onSubmit={handleSubmitBooking} className="space-y-5 sm:space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
             <div>
               <label className="block text-xs font-bold text-stone-800 mb-1">
                 मुख्य यजमान का पूरा नाम <span className="text-rose-600">*</span>
@@ -441,14 +441,14 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
           </div>
 
           <div className="border-t border-stone-200 pt-5 space-y-4">
-            <h3 className="text-base font-bold font-serif text-stone-900 flex items-center justify-between">
+            <h3 className="text-sm sm:text-base font-bold font-serif text-stone-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span>महायज्ञ तिथि, समय (9:00 AM) एवं हवन कुंड संख्या</span>
-              <span className="text-xs font-bold text-[#872e18] bg-amber-100 px-3 py-1 rounded-xl border border-amber-300">
+              <span className="text-xs font-bold text-[#872e18] bg-amber-100 px-3 py-1 rounded-xl border border-amber-300 self-start sm:self-auto">
                 ₹ 1,100 प्रति कुंड
               </span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
               <div>
                 <label className="block text-xs font-bold text-stone-800 mb-1">
                   1. यज्ञ दिवस व तिथि <span className="text-rose-600">*</span>
@@ -471,11 +471,11 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                   2. यज्ञ समय <span className="text-emerald-700 font-bold">(9:00 AM नियत)</span>
                 </label>
                 <div className="w-full px-3 py-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-xs sm:text-sm font-bold text-[#8a1523] flex items-center justify-between shadow-2xs">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-[#8a1523]" />
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <Clock className="w-4 h-4 text-[#8a1523] shrink-0" />
                     <span>9:00 AM (प्रातः 09:00 AM)</span>
                   </div>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md font-bold">
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 sm:px-2 py-0.5 rounded-md font-bold shrink-0">
                     एकल सत्र
                   </span>
                 </div>
@@ -492,7 +492,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                     max={10}
                     value={kundCount}
                     onChange={(e) => handleKundCountChange(Number(e.target.value))}
-                    className="w-20 px-3 py-2.5 bg-white border-2 border-amber-400 rounded-xl text-xs sm:text-sm font-black text-[#872e18] text-center shadow-2xs"
+                    className="w-16 sm:w-20 px-2 sm:px-3 py-2.5 bg-white border-2 border-amber-400 rounded-xl text-xs sm:text-sm font-black text-[#872e18] text-center shadow-2xs shrink-0"
                   />
                   <div className="flex items-center gap-1 flex-1">
                     {[1, 2, 3, 4, 5].map((cnt) => (
@@ -518,17 +518,17 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
           <div className="border-t border-stone-200 pt-5 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h3 className="text-base font-bold font-serif text-stone-900 flex items-center gap-2">
-                  <Flame className="w-5 h-5 text-amber-600" />
+                <h3 className="text-sm sm:text-base font-bold font-serif text-stone-900 flex items-center gap-1.5 sm:gap-2">
+                  <Flame className="w-5 h-5 text-amber-600 shrink-0" />
                   <span>अग्नि कुंड संख्या चुनें (10 से 108)</span>
                 </h3>
-                <p className="text-xs text-stone-500">
+                <p className="text-[11px] sm:text-xs text-stone-500">
                   कुंड 1 से 9 संतों व वेदाचार्यों के लिए आरक्षित हैं। आप {kundCount} कुंड चुन सकते हैं।
                 </p>
               </div>
 
-              <div className="inline-flex items-center gap-1.5 bg-amber-100 text-amber-950 font-bold px-3 py-1.5 rounded-xl text-xs border border-amber-300">
-                <Flame className="w-4 h-4 text-amber-700" />
+              <div className="inline-flex flex-wrap items-center gap-1.5 bg-amber-100 text-amber-950 font-bold px-2.5 sm:px-3 py-1.5 rounded-xl text-xs border border-amber-300 max-w-full">
+                <Flame className="w-4 h-4 text-amber-700 shrink-0" />
                 <span>
                   चयनित {selectedKunds.length}/{kundCount} कुंड:{' '}
                   {selectedKunds.map((n) => `#${String(n).padStart(3, '0')}`).join(', ')}
@@ -536,8 +536,8 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
               </div>
             </div>
 
-            <div className="bg-[#faf5eb] p-3 sm:p-4 rounded-2xl border border-amber-200">
-              <div className="grid grid-cols-6 sm:grid-cols-10 md:grid-cols-12 gap-2 max-h-56 overflow-y-auto p-1">
+            <div className="bg-[#faf5eb] p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-amber-200">
+              <div className="grid grid-cols-4 min-[360px]:grid-cols-5 min-[420px]:grid-cols-6 sm:grid-cols-10 md:grid-cols-12 gap-1.5 sm:gap-2 max-h-56 overflow-y-auto p-1">
                 {kundSummary.list.map((k) => {
                   const isReservedSant = k.isReserved;
                   const isSelected = selectedKunds.includes(k.kundNumber);
@@ -549,7 +549,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                       type="button"
                       disabled={isReservedSant || isFull}
                       onClick={() => handleToggleKund(k.kundNumber)}
-                      className={`p-2 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                      className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
                         isReservedSant
                           ? 'bg-stone-200 text-stone-400 border border-stone-300 cursor-not-allowed'
                           : isFull
@@ -582,20 +582,20 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
             </div>
           )}
 
-          <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-3.5 text-xs text-emerald-950 flex items-start gap-2.5 shadow-2xs">
-            <span className="text-lg leading-none">📲</span>
+          <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-3 sm:p-3.5 text-xs text-emerald-950 flex items-start gap-2.5 shadow-2xs">
+            <span className="text-base sm:text-lg leading-none shrink-0">📲</span>
             <div className="leading-relaxed">
               <span className="font-bold text-emerald-900 block mb-0.5">WhatsApp स्वचालित विवरण सेवा:</span>
               दक्षिणा UTR जमा करने के उपरांत, आश्रम के व्यवस्थापक (Admin) द्वारा बैंक सत्यापन होते ही आपका <strong>आधिकारिक टोकन नंबर, हवन कुंड संख्या एवं सभी विवरण आपके पंजीकृत मोबाइल नंबर (+91 {mobile || 'XXXXXXXXXX'}) पर WhatsApp द्वारा</strong> भेज दिए जाएंगे।
             </div>
           </div>
 
-          <div className="border-t border-stone-200 pt-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="border-t border-stone-200 pt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <div>
               <span className="text-xs text-stone-500 font-bold uppercase tracking-wider block">
                 कुल देय दक्षिणा (Total Amount)
               </span>
-              <span className="text-3xl font-black text-[#872e18]">
+              <span className="text-2xl sm:text-3xl font-black text-[#872e18]">
                 ₹ {totalAmount}
               </span>
               <span className="text-xs font-bold text-stone-600 ml-2">
@@ -605,10 +605,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
 
             <button
               type="submit"
-              className="w-full sm:w-auto px-7 py-3.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 sm:px-7 py-3.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
             >
               <span>अस्थायी आरक्षण करें व दक्षिणा जमा करें</span>
-              <ChevronRight className="w-4 h-4 text-white" />
+              <ChevronRight className="w-4 h-4 text-white shrink-0" />
             </button>
           </div>
         </form>

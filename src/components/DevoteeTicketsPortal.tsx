@@ -84,50 +84,50 @@ export const DevoteeTicketsPortal: React.FC<DevoteeTicketsPortalProps> = ({
 
   if (currentUser) {
     return (
-      <div className="max-w-4xl mx-auto px-4 pt-6 space-y-6">
-        <div className="bg-gradient-to-r from-[#240608] via-[#4a0e17] to-[#872e18] text-white rounded-3xl p-6 shadow-xl border-2 border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-amber-400 text-[#4a0e17] flex items-center justify-center font-bold text-2xl shadow-lg border-2 border-amber-200 shrink-0">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 space-y-5 sm:space-y-6">
+        <div className="bg-gradient-to-r from-[#240608] via-[#4a0e17] to-[#872e18] text-white rounded-3xl p-4 sm:p-6 shadow-xl border-2 border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-400 text-[#4a0e17] flex items-center justify-center font-bold text-xl sm:text-2xl shadow-lg border-2 border-amber-200 shrink-0">
               {currentUser.fullName ? currentUser.fullName.charAt(0) : '✓'}
             </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold font-serif text-amber-200">
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-2xl font-bold font-serif text-amber-200 truncate">
                 {currentUser.fullName}
               </h2>
-              <div className="text-xs text-amber-100/80 mt-0.5">
+              <div className="text-xs text-amber-100/80 mt-0.5 truncate">
                 मोबाइल: +91 {currentUser.mobile} • नगर: {currentUser.city || 'नोएडा'}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               onClick={onBookNew}
-              className="bg-amber-400 hover:bg-amber-500 text-stone-950 font-bold text-xs px-4 py-2 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5"
+              className="flex-1 sm:flex-initial justify-center bg-amber-400 hover:bg-amber-500 text-stone-950 font-bold text-xs px-3 sm:px-4 py-2.5 sm:py-2 rounded-xl shadow-md cursor-pointer flex items-center gap-1.5 text-center"
             >
-              <Flame className="w-4 h-4" />
-              <span>नया कुंड बुक करें</span>
+              <Flame className="w-4 h-4 shrink-0" />
+              <span className="truncate">नया कुंड बुक करें</span>
             </button>
             <button
               onClick={() => {
                 setCurrentUser(null);
                 localStorage.removeItem('yagya_devotee_user');
               }}
-              className="bg-rose-950/60 hover:bg-rose-900 text-rose-200 px-3 py-2 rounded-xl text-xs font-semibold border border-rose-400/30 cursor-pointer flex items-center gap-1"
+              className="bg-rose-950/60 hover:bg-rose-900 text-rose-200 px-3 py-2.5 sm:py-2 rounded-xl text-xs font-semibold border border-rose-400/30 cursor-pointer flex items-center justify-center gap-1 shrink-0"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-3.5 h-3.5 shrink-0" />
               <span>लॉग आउट</span>
             </button>
           </div>
         </div>
 
         <div className="space-y-4">
-          <h3 className="text-lg font-bold text-[#872e18] font-serif flex items-center gap-2">
-            <Ticket className="w-5 h-5 text-amber-600" />
+          <h3 className="text-base sm:text-lg font-bold text-[#872e18] font-serif flex items-center gap-2">
+            <Ticket className="w-5 h-5 text-amber-600 shrink-0" />
             <span>मेरे आरक्षित हवन कुंड एवं रसीदें ({myBookings.length})</span>
           </h3>
 
           {myBookings.length === 0 ? (
-            <div className="bg-white rounded-3xl p-8 text-center border-2 border-dashed border-amber-300">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 text-center border-2 border-dashed border-amber-300">
               <Ticket className="w-12 h-12 text-amber-600/50 mx-auto mb-2" />
               <div className="font-bold text-base text-stone-800">कोई सक्रिय बुकिंग नहीं मिली</div>
               <p className="text-xs text-stone-500 mt-1 mb-4">
@@ -135,7 +135,7 @@ export const DevoteeTicketsPortal: React.FC<DevoteeTicketsPortalProps> = ({
               </p>
               <button
                 onClick={onBookNew}
-                className="bg-[#872e18] text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer"
+                className="w-full sm:w-auto bg-[#872e18] text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer"
               >
                 हवन कुंड आरक्षण आरंभ करें
               </button>
@@ -149,7 +149,7 @@ export const DevoteeTicketsPortal: React.FC<DevoteeTicketsPortalProps> = ({
                 return (
                   <div
                     key={ticket.id}
-                    className={`bg-white rounded-2xl border-2 p-5 shadow-sm space-y-3 ${
+                    className={`bg-white rounded-2xl border-2 p-3.5 sm:p-5 shadow-sm space-y-3 ${
                       isPaid
                         ? 'border-emerald-300'
                         : ticket.paymentStatus === 'rejected'
@@ -158,12 +158,12 @@ export const DevoteeTicketsPortal: React.FC<DevoteeTicketsPortalProps> = ({
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
-                      <div className="flex items-center gap-3">
-                        <span className="bg-[#872e18] text-amber-200 font-bold px-3 py-1 rounded-lg text-xs">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <span className="bg-[#872e18] text-amber-200 font-bold px-2.5 py-1 rounded-lg text-xs shrink-0">
                           हवन कुंड #{ticket.kundNumbers && ticket.kundNumbers.length > 0 ? ticket.kundNumbers.map((n) => String(n).padStart(3, '0')).join(', #') : String(ticket.kundNumber).padStart(3, '0')}
                         </span>
-                        <div>
-                          <span className="font-mono font-bold text-stone-900 text-sm">
+                        <div className="min-w-0">
+                          <span className="font-mono font-bold text-stone-900 text-xs sm:text-sm break-all block">
                             टोकन: {ticket.token}
                           </span>
                           <div className="text-[11px] text-stone-500">
@@ -174,34 +174,34 @@ export const DevoteeTicketsPortal: React.FC<DevoteeTicketsPortalProps> = ({
 
                       <div>
                         {isPaid ? (
-                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs px-3 py-1 rounded-full font-bold">
-                            ✓ भुगतान सत्यापित (Payment Verified)
+                          <span className="inline-block bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs px-2.5 sm:px-3 py-1 rounded-full font-bold">
+                            ✓ भुगतान सत्यापित (Verified)
                           </span>
                         ) : ticket.paymentStatus === 'rejected' ? (
-                          <span className="bg-rose-100 text-rose-800 border border-rose-300 text-xs px-3 py-1 rounded-full font-bold">
-                            ✕ भुगतान अस्वीकृत (Payment Rejected)
+                          <span className="inline-block bg-rose-100 text-rose-800 border border-rose-300 text-xs px-2.5 sm:px-3 py-1 rounded-full font-bold">
+                            ✕ भुगतान अस्वीकृत (Rejected)
                           </span>
                         ) : isPending ? (
-                          <span className="bg-amber-100 text-amber-900 border border-amber-300 text-xs px-3 py-1 rounded-full font-bold animate-pulse">
-                            ⏳ भुगतान सत्यापन लंबित (Payment Pending Verification)
+                          <span className="inline-block bg-amber-100 text-amber-900 border border-amber-300 text-xs px-2.5 sm:px-3 py-1 rounded-full font-bold animate-pulse">
+                            ⏳ सत्यापन लंबित (Pending)
                           </span>
                         ) : (
-                          <span className="bg-blue-100 text-blue-800 text-xs px-3 py-1 rounded-full font-bold">
-                            काउंटर भुगतान (Counter Payment)
+                          <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2.5 sm:px-3 py-1 rounded-full font-bold">
+                            काउंटर भुगतान
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-stone-600 bg-stone-50 p-3 rounded-xl">
-                      <div><strong>यजमान:</strong> {ticket.fullName || ticket.husbandName}</div>
-                      <div><strong>कुल दक्षिणा:</strong> ₹ {ticket.amount} ({ticket.kundCount || 1} कुंड × ₹1,100)</div>
+                    <div className="grid grid-cols-1 min-[360px]:grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-stone-600 bg-stone-50 p-3 rounded-xl">
+                      <div><strong>यजमान:</strong> <span className="break-words">{ticket.fullName || ticket.husbandName}</span></div>
+                      <div><strong>कुल दक्षिणा:</strong> ₹ {ticket.amount} ({ticket.kundCount || 1} कुंड)</div>
                       <div><strong>आरक्षित कुंड:</strong> {ticket.kundCount || 1}</div>
-                      <div><strong>UTR संदर्भ:</strong> {ticket.utrNumber || '-'}</div>
+                      <div><strong>UTR संदर्भ:</strong> <span className="font-mono break-all">{ticket.utrNumber || '-'}</span></div>
                     </div>
 
                     {ticket.paymentStatus === 'rejected' && ticket.rejectionReason && (
-                      <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-xs text-rose-800">
+                      <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 text-xs text-rose-800 break-words">
                         <strong>अस्वीकृति कारण:</strong> {ticket.rejectionReason}
                       </div>
                     )}
@@ -218,17 +218,17 @@ export const DevoteeTicketsPortal: React.FC<DevoteeTicketsPortalProps> = ({
                       {isPaid ? (
                         <button
                           onClick={() => onOpenSlip(ticket)}
-                          className="px-4 py-2 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shrink-0"
+                          className="w-full sm:w-auto justify-center px-4 py-2.5 sm:py-2 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shrink-0 text-center"
                         >
-                          <Printer className="w-3.5 h-3.5" />
+                          <Printer className="w-3.5 h-3.5 shrink-0" />
                           <span>रसीद देखें / PDF प्रिंट करें</span>
                         </button>
                       ) : (
                         <button
                           disabled
-                          className="px-4 py-2 bg-stone-200 text-stone-400 font-bold text-xs rounded-xl cursor-not-allowed flex items-center gap-1.5 shrink-0"
+                          className="w-full sm:w-auto justify-center px-4 py-2.5 sm:py-2 bg-stone-200 text-stone-400 font-bold text-xs rounded-xl cursor-not-allowed flex items-center gap-1.5 shrink-0 text-center"
                         >
-                          <Lock className="w-3.5 h-3.5" />
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
                           <span>रसीद लॉक है ({ticket.paymentStatus === 'rejected' ? 'अस्वीकृत' : 'सत्यापन लंबित'})</span>
                         </button>
                       )}
@@ -372,7 +372,7 @@ export const DevoteeTicketsPortal: React.FC<DevoteeTicketsPortalProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 mb-1">नगर / शहर</label>
                   <input

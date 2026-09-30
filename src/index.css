@@ -11,8 +11,27 @@
     --maharishi-cream: #fff9f0;
   }
 
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    overflow-x: hidden;
+    max-width: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', 'Noto Sans Devanagari', system-ui, -apple-system, sans-serif;
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+    min-height: 100vh;
+  }
+
+  img, svg, video, canvas, audio, iframe, embed, object {
+    max-width: 100%;
+    height: auto;
   }
 
   h1, h2, h3, .font-heading {
@@ -22,6 +41,23 @@
   .font-vedic {
     font-family: 'Yatra One', 'Rozha One', 'Noto Sans Devanagari', serif;
   }
+}
+
+/* Hide scrollbar for clean mobile tabs while keeping scrollability */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Controlled horizontal scrolling for data tables on small screens */
+.table-responsive-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Custom scrollbars */

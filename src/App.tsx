@@ -181,7 +181,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#faf5eb] flex flex-col justify-between text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#faf5eb] flex flex-col justify-between text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
       {/* Top Pure Vedic Header with Navigation and Stepper */}
       <Header
         currentView={currentView}
@@ -194,7 +194,7 @@ export default function App() {
       />
 
       {/* Main Content Body */}
-      <main className="flex-1">
+      <main className="flex-1 w-full max-w-full overflow-x-hidden">
         {currentView === 'home' && (
           <HomeView
             selectedDate={selectedDate}
@@ -207,7 +207,7 @@ export default function App() {
         )}
 
         {currentView === 'register' && (
-          <div className="w-full pb-14 bg-[#faf5eb] min-h-[80vh]">
+          <div className="w-full max-w-full pb-14 bg-[#faf5eb] min-h-[80vh]">
             {currentStep <= 2 && (
               <RegistrationStepView
                 initialKund={preselectedKund}

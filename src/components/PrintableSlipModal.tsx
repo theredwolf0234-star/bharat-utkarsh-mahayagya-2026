@@ -221,38 +221,53 @@ export const PrintableSlipModal: React.FC<PrintableSlipModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border-4 border-[#872e18] my-auto overflow-hidden animate-in fade-in">
-        <div className="bg-[#240608] text-amber-200 px-4 sm:px-6 py-3 flex items-center justify-between border-b border-amber-600">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-amber-400" />
-            <span className="font-bold text-xs sm:text-base font-serif">
-              आधिकारिक प्रवेश पास व रसीद
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrintPreview}
-              className="bg-amber-400 hover:bg-amber-500 text-stone-950 font-bold text-xs sm:text-sm px-4 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
-              title="प्रिंट प्रीव्यू खोलें एवं PDF के रूप में सहेजें"
-            >
-              <Printer className="w-4 h-4" />
-              <span>प्रिंट प्रीव्यू / PDF सहेजें</span>
-            </button>
-            <button
-              onClick={handleDownloadOfflineSlip}
-              className="bg-white/10 hover:bg-white/20 text-amber-200 font-semibold text-xs px-3 py-1.5 rounded-xl border border-amber-400/40 flex items-center gap-1.5 cursor-pointer"
-              title="PDF/HTML फ़ाइल डाउनलोड करें"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{downloadSuccess ? 'डाउनलोड हुआ!' : 'PDF डाउनलोड'}</span>
-            </button>
-            <button onClick={onClose} className="text-amber-200 hover:text-white p-1 rounded-md text-lg cursor-pointer">
-              <X className="w-5 h-5" />
-            </button>
+        <div className="bg-[#240608] text-amber-200 px-3 sm:px-6 py-3 border-b border-amber-600">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+            <div className="flex items-center justify-between sm:justify-start gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
+                <span className="font-bold text-xs sm:text-base font-serif truncate">
+                  आधिकारिक प्रवेश पास व रसीद
+                </span>
+              </div>
+              <button 
+                onClick={onClose} 
+                className="text-amber-200 hover:text-white p-1 rounded-lg hover:bg-white/10 sm:hidden cursor-pointer shrink-0"
+                aria-label="बंद करें"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={handlePrintPreview}
+                className="flex-1 sm:flex-initial justify-center bg-amber-400 hover:bg-amber-500 text-stone-950 font-bold text-xs sm:text-sm px-3 sm:px-4 py-2 sm:py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer text-center"
+                title="प्रिंट प्रीव्यू खोलें एवं PDF के रूप में सहेजें"
+              >
+                <Printer className="w-4 h-4 shrink-0" />
+                <span className="truncate">प्रिंट / PDF सहेजें</span>
+              </button>
+              <button
+                onClick={handleDownloadOfflineSlip}
+                className="flex-1 sm:flex-initial justify-center bg-white/10 hover:bg-white/20 text-amber-200 font-semibold text-xs px-2.5 sm:px-3 py-2 sm:py-1.5 rounded-xl border border-amber-400/40 flex items-center gap-1.5 cursor-pointer text-center"
+                title="PDF/HTML फ़ाइल डाउनलोड करें"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{downloadSuccess ? 'डाउनलोड हुआ!' : 'PDF डाउनलोड'}</span>
+              </button>
+              <button 
+                onClick={onClose} 
+                className="hidden sm:inline-flex text-amber-200 hover:text-white p-1 rounded-md text-lg cursor-pointer"
+                aria-label="बंद करें"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
-        <div id="printable-slip-area" className="p-4 sm:p-6 bg-[#fffdf8] relative text-stone-900">
-          <div className="border-2 border-[#872e18] rounded-2xl p-4 sm:p-6 relative bg-white shadow-sm space-y-4">
+        <div id="printable-slip-area" className="p-3 sm:p-6 bg-[#fffdf8] relative text-stone-900">
+          <div className="border-2 border-[#872e18] rounded-2xl p-3 sm:p-6 relative bg-white shadow-sm space-y-4">
             <div className="text-center border-b-2 border-amber-300 pb-3">
               <div className="text-xs font-bold text-[#872e18] uppercase tracking-wider">
                 श्री महर्षि वेदविज्ञान संस्थान
@@ -265,16 +280,16 @@ export const PrintableSlipModal: React.FC<PrintableSlipModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#fcf5e9] border border-[#e8d8be] rounded-xl p-3.5 items-center text-center sm:text-left">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#fcf5e9] border border-[#e8d8be] rounded-xl p-3 sm:p-3.5 items-center text-center sm:text-left">
               <div>
                 <span className="text-[11px] font-bold text-stone-500 uppercase block">टोकन संख्या</span>
-                <span className="font-mono font-black text-lg text-[#872e18]">{registration.token}</span>
+                <span className="font-mono font-black text-base sm:text-lg text-[#872e18] break-all">{registration.token}</span>
               </div>
               <div className="bg-[#872e18] text-white py-2 px-3 rounded-lg shadow-xs border border-amber-400 text-center">
                 <span className="text-[10px] text-amber-300 uppercase block font-medium">हवन कुंड सं.</span>
-                <span className="text-xl font-black text-amber-200 flex items-center justify-center gap-1">
-                  <Flame className="w-4 h-4 text-orange-400" />
-                  #{registration.kundNumbers && registration.kundNumbers.length > 0 ? registration.kundNumbers.map((n) => String(n).padStart(3, '0')).join(', #') : String(registration.kundNumber).padStart(3, '0')}
+                <span className="text-lg sm:text-xl font-black text-amber-200 flex items-center justify-center gap-1 flex-wrap">
+                  <Flame className="w-4 h-4 text-orange-400 shrink-0" />
+                  <span>#{registration.kundNumbers && registration.kundNumbers.length > 0 ? registration.kundNumbers.map((n) => String(n).padStart(3, '0')).join(', #') : String(registration.kundNumber).padStart(3, '0')}</span>
                 </span>
                 <span className="text-[10px] text-amber-200 font-bold block mt-0.5">कुल कुंड: {registration.kundCount || 1}</span>
               </div>
@@ -294,68 +309,68 @@ export const PrintableSlipModal: React.FC<PrintableSlipModalProps> = ({
               </div>
             )}
 
-            <div className="space-y-2 text-xs sm:text-sm bg-stone-50/60 p-4 rounded-xl border border-stone-200">
-              <div className="flex justify-between py-1.5 border-b border-stone-200">
-                <span className="text-stone-500 font-medium">मुख्य यजमान:</span>
-                <span className="font-bold text-stone-900">{registration.fullName || registration.husbandName}</span>
+            <div className="space-y-2 text-xs sm:text-sm bg-stone-50/60 p-3 sm:p-4 rounded-xl border border-stone-200">
+              <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
+                <span className="text-stone-500 font-medium shrink-0">मुख्य यजमान:</span>
+                <span className="font-bold text-stone-900 sm:text-right break-words">{registration.fullName || registration.husbandName}</span>
               </div>
               {registration.wifeName && (
-                <div className="flex justify-between py-1.5 border-b border-stone-200">
-                  <span className="text-stone-500 font-medium">सह-यजमान / धर्मपत्नी:</span>
-                  <span className="font-bold text-stone-900">{registration.wifeName}</span>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
+                  <span className="text-stone-500 font-medium shrink-0">सह-यजमान / धर्मपत्नी:</span>
+                  <span className="font-bold text-stone-900 sm:text-right break-words">{registration.wifeName}</span>
                 </div>
               )}
-              <div className="flex justify-between py-1.5 border-b border-stone-200">
-                <span className="text-stone-500 font-medium">पंजीकृत मोबाइल:</span>
-                <span className="font-mono font-bold text-stone-900">+91 {registration.mobile}</span>
+              <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
+                <span className="text-stone-500 font-medium shrink-0">पंजीकृत मोबाइल:</span>
+                <span className="font-mono font-bold text-stone-900 sm:text-right">+91 {registration.mobile}</span>
               </div>
               {registration.city && (
-                <div className="flex justify-between py-1.5 border-b border-stone-200">
-                  <span className="text-stone-500 font-medium">नगर / शहर:</span>
-                  <span className="font-bold text-stone-900">{registration.city}</span>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
+                  <span className="text-stone-500 font-medium shrink-0">नगर / शहर:</span>
+                  <span className="font-bold text-stone-900 sm:text-right break-words">{registration.city}</span>
                 </div>
               )}
               {registration.gotra && (
-                <div className="flex justify-between py-1.5 border-b border-stone-200">
-                  <span className="text-stone-500 font-medium">गोत्र:</span>
-                  <span className="font-bold text-stone-900">{registration.gotra}</span>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
+                  <span className="text-stone-500 font-medium shrink-0">गोत्र:</span>
+                  <span className="font-bold text-stone-900 sm:text-right break-words">{registration.gotra}</span>
                 </div>
               )}
-              <div className="flex justify-between py-1.5 border-b border-stone-200">
-                <span className="text-stone-500 font-medium">आरक्षित कुंड:</span>
-                <span className="font-bold text-stone-900">{registration.kundCount || 1} कुंड (₹1,100 प्रति कुंड)</span>
+              <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
+                <span className="text-stone-500 font-medium shrink-0">आरक्षित कुंड:</span>
+                <span className="font-bold text-stone-900 sm:text-right">{registration.kundCount || 1} कुंड (₹1,100 प्रति कुंड)</span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-stone-200">
-                <span className="text-stone-500 font-medium">दक्षिणा स्थिति:</span>
+              <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-1 sm:gap-2">
+                <span className="text-stone-500 font-medium shrink-0">दक्षिणा स्थिति:</span>
                 {registration.paymentStatus === 'paid' ? (
-                  <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                  <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded sm:text-right inline-block">
                     ₹ {registration.amount} (सत्यापित व स्वीकृत - Payment Verified)
                   </span>
                 ) : (
-                  <span className="font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded">
+                  <span className="font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded sm:text-right inline-block">
                     ₹ {registration.amount} (भुगतान सत्यापन लंबित - Payment Pending Verification)
                   </span>
                 )}
               </div>
               {registration.utrNumber && (
-                <div className="flex justify-between py-1.5 border-b border-stone-200">
-                  <span className="text-stone-500 font-medium">बैंक UTR संदर्भ:</span>
-                  <span className="font-mono font-bold text-stone-900">{registration.utrNumber}</span>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
+                  <span className="text-stone-500 font-medium shrink-0">बैंक UTR संदर्भ:</span>
+                  <span className="font-mono font-bold text-stone-900 sm:text-right break-all">{registration.utrNumber}</span>
                 </div>
               )}
-              <div className="flex justify-between py-1.5">
-                <span className="text-stone-500 font-medium">यज्ञ स्थल:</span>
-                <span className="text-right text-stone-800 font-bold">{VENUE_ADDRESS}</span>
+              <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 gap-0.5 sm:gap-2">
+                <span className="text-stone-500 font-medium shrink-0">यज्ञ स्थल:</span>
+                <span className="text-left sm:text-right text-stone-800 font-bold break-words">{VENUE_ADDRESS}</span>
               </div>
             </div>
 
-            <div className="flex items-end justify-between pt-3 border-t border-stone-300 text-xs text-stone-600">
-              <div>
-                <div className="font-bold text-stone-800">आश्रम कार्यालय मुहर</div>
-                <div className="text-[10px] text-stone-500">सेक्टर-110, नोएडा 201304</div>
+            <div className="flex items-end justify-between pt-3 border-t border-stone-300 text-xs text-stone-600 gap-2">
+              <div className="shrink-0 max-w-[90px] min-[360px]:max-w-[120px] sm:max-w-none">
+                <div className="font-bold text-stone-800 text-[11px] sm:text-xs">आश्रम कार्यालय मुहर</div>
+                <div className="text-[9px] min-[360px]:text-[10px] text-stone-500">सेक्टर-110, नोएडा 201304</div>
               </div>
-              <div className="text-center">
-                <div className="w-16 h-16 rounded-full border-2 border-dashed border-[#872e18] flex items-center justify-center text-[9px] font-bold text-[#872e18] uppercase tracking-tighter mx-auto leading-tight rotate-[-10deg] bg-amber-50">
+              <div className="text-center shrink-0">
+                <div className="w-14 h-14 min-[360px]:w-16 min-[360px]:h-16 rounded-full border-2 border-dashed border-[#872e18] flex items-center justify-center text-[8px] min-[360px]:text-[9px] font-bold text-[#872e18] uppercase tracking-tighter mx-auto leading-tight rotate-[-10deg] bg-amber-50">
                   {registration.paymentStatus === 'paid' ? (
                     <>महर्षि आश्रम<br />सत्यापित मुहर<br />2026</>
                   ) : (
@@ -363,13 +378,13 @@ export const PrintableSlipModal: React.FC<PrintableSlipModalProps> = ({
                   )}
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-[11px] text-stone-500">सत्यापित अधिकृत व्यवस्थापक:</div>
-                <div className="font-serif font-bold text-stone-900 italic text-sm">
+              <div className="text-right shrink-0 max-w-[110px] min-[360px]:max-w-[130px] sm:max-w-none">
+                <div className="text-[10px] min-[360px]:text-[11px] text-stone-500">सत्यापित व्यवस्थापक:</div>
+                <div className="font-serif font-bold text-stone-900 italic text-xs sm:text-sm truncate">
                   {registration.verifiedBy || 'व्यवस्थापक'}
                 </div>
-                <div className={`text-[10px] font-bold ${registration.paymentStatus === 'paid' ? 'text-emerald-700' : 'text-rose-700'}`}>
-                  {registration.paymentStatus === 'paid' ? '✓ VERIFIED PASS' : '⏳ UNCONFIRMED / PENDING'}
+                <div className={`text-[9px] min-[360px]:text-[10px] font-bold ${registration.paymentStatus === 'paid' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                  {registration.paymentStatus === 'paid' ? '✓ VERIFIED PASS' : '⏳ UNCONFIRMED'}
                 </div>
               </div>
             </div>
