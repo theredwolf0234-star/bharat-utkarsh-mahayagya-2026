@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Ticket, MapPin, Sparkles } from 'lucide-react';
+import { Flame, Ticket, MapPin, Sparkles, ArrowLeft } from 'lucide-react';
 import { DevoteeUser } from '../types/yagya';
 import { YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
 
@@ -123,10 +123,26 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
       </div>
 
-      {/* Hawan Kund Booking Flow Stepper */}
+      {/* Hawan Kund Booking Flow Stepper with Previous Arrow */}
       {currentView === 'register' && (
         <div className="bg-[#fcf5e9] border-t border-b border-[#e8d8be] py-2 px-2 sm:px-3 text-stone-800 overflow-x-auto no-scrollbar">
-          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3 min-w-max sm:min-w-0 text-xs sm:text-sm font-semibold">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-2.5 sm:gap-3 min-w-max sm:min-w-0 text-xs sm:text-sm font-semibold">
+            {/* Previous Arrow Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (currentStep > 1) {
+                  setCurrentStep(1);
+                } else {
+                  setCurrentView('home');
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 bg-white hover:bg-amber-100 text-[#872e18] border border-amber-300 rounded-lg text-xs font-bold shadow-2xs transition-all cursor-pointer shrink-0 group"
+              title="पिछले पृष्ठ पर जाएं"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
+              <span>पिछला (Previous)</span>
+            </button>
             {[
               { num: 1, label: '1. यजमान व साधक खाता' },
               { num: 2, label: '2. कुंड व तिथि' },

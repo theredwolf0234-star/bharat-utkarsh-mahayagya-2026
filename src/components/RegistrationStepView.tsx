@@ -11,6 +11,7 @@ import {
   Clock,
   Lock,
   Loader2,
+  ArrowLeft,
 } from 'lucide-react';
 import { DevoteeUser, Registration, KundSummary, KundLiveItem } from '../types/yagya';
 import {
@@ -33,6 +34,7 @@ interface RegistrationStepViewProps {
   onProceedToPayment: (tempReg: Registration) => void;
   kundSummary: KundSummary;
   registrations: Registration[];
+  onBack?: () => void;
 }
 
 export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
@@ -45,6 +47,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
   onProceedToPayment,
   kundSummary,
   registrations,
+  onBack,
 }) => {
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
   const [wifeName, setWifeName] = useState('');
@@ -253,7 +256,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
         kundNumbers: [primaryKund],
         kundCount: 1,
         date,
-        timeSlot: '9:30 AM (प्रातः 09:30 AM)',
+        timeSlot: '9:00 AM (प्रातः 09:00 AM)',
         participationType,
         personCount: wifeName.trim() ? 2 : 1,
         amount: totalAmount,
@@ -279,6 +282,24 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 space-y-4 sm:space-y-6">
+      {/* Previous Arrow Button */}
+      {onBack && (
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-amber-100 text-[#872e18] border border-amber-300 rounded-xl text-xs sm:text-sm font-bold shadow-2xs transition-all cursor-pointer group"
+            title="मुख्य पृष्ठ पर लौटें"
+          >
+            <ArrowLeft className="w-4 h-4 text-[#8a1523] group-hover:-translate-x-1 transition-transform" />
+            <span>← पिछला पृष्ठ (मुख्य पृष्ठ पर वापस जाएं)</span>
+          </button>
+          <div className="text-[11px] sm:text-xs text-stone-500 font-semibold bg-white/80 px-2.5 py-1 rounded-lg border border-stone-200">
+            चरण 1 • यजमान विवरण व कुंड चयन
+          </div>
+        </div>
+      )}
+
       <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-3.5 sm:p-4 shadow-xs flex items-start gap-2.5 sm:gap-3">
         <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-[#8a1523] shrink-0 mt-0.5" />
         <div className="text-xs sm:text-sm text-stone-800 leading-relaxed">
@@ -580,7 +601,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
 
           <div className="border-t border-stone-200 pt-5 space-y-4">
             <h3 className="text-sm sm:text-base font-bold font-serif text-stone-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <span>महायज्ञ तिथि, समय (9:30 AM) एवं 108 हवन कुंड चयन</span>
+              <span>महायज्ञ तिथि, समय (9:00 AM) एवं 108 हवन कुंड चयन</span>
               <span className="text-xs font-bold text-[#872e18] bg-amber-100 px-3 py-1 rounded-xl border border-amber-300 self-start sm:self-auto">
                 1 मोबाइल = 1 कुंड
               </span>
@@ -606,12 +627,12 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-stone-800 mb-1">
-                  2. यज्ञ सत्र समय <span className="text-emerald-700 font-bold">(प्रातः 09:30 AM)</span>
+                  2. यज्ञ सत्र समय <span className="text-emerald-700 font-bold">(प्रातः 09:00 AM)</span>
                 </label>
                 <div className="w-full px-3 py-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-xs sm:text-sm font-bold text-[#8a1523] flex items-center justify-between shadow-2xs">
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <Clock className="w-4 h-4 text-[#8a1523] shrink-0" />
-                    <span>09:30 AM सत्र</span>
+                    <span>09:00 AM सत्र</span>
                   </div>
                   <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 sm:px-2 py-0.5 rounded-md font-bold shrink-0">
                     मुख्य सत्र

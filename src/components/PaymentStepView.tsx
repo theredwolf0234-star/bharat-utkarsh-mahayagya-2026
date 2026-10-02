@@ -9,6 +9,7 @@ import {
   Copy,
   Check,
   FileText,
+  ArrowLeft,
 } from 'lucide-react';
 import { Registration, SystemSettings, AuditLog } from '../types/yagya';
 import { getWhatsAppSendUrl } from '../utils/whatsapp';
@@ -493,13 +494,33 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6">
+      {/* Previous Arrow Button */}
+      <div className="mb-3.5 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onGoBooking}
+          className="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-amber-100 text-[#872e18] border border-amber-300 rounded-xl text-xs sm:text-sm font-bold shadow-2xs transition-all cursor-pointer group"
+          title="हवन कुंड, यज्ञ तिथि अथवा यजमान विवरण बदलने हेतु वापस जाएं"
+        >
+          <ArrowLeft className="w-4 h-4 text-[#8a1523] group-hover:-translate-x-1 transition-transform" />
+          <span>← पिछला चरण (हवन कुंड या विवरण बदलें)</span>
+        </button>
+        <button
+          type="button"
+          onClick={onGoHome}
+          className="text-xs text-stone-600 hover:text-[#8a1523] font-semibold underline cursor-pointer"
+        >
+          मुख्य पृष्ठ पर जाएं
+        </button>
+      </div>
+
       <div className="bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-[#e8ddcb] p-4 sm:p-8">
         <div className="border-b border-stone-200 pb-4 mb-5 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div className="inline-flex flex-wrap items-center gap-1 text-[10px] min-[360px]:text-[11px] font-bold text-[#8a1523] bg-amber-100 px-2.5 py-1 rounded-xl mb-1 border border-amber-300 max-w-full">
               <span>यज्ञ तिथि: {activeReg?.date}</span>
               <span>•</span>
-              <span>समय: प्रातः 09:30 AM</span>
+              <span>समय: प्रातः 09:00 AM</span>
               <span>•</span>
               <span>{kundCount} हवन कुंड ({kundFormatted})</span>
             </div>

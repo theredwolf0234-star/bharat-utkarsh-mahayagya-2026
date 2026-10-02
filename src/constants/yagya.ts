@@ -30,7 +30,7 @@ export const YAGYA_DATES: YagyaDateOption[] = [
   { date: '2026-12-05', label: '05 दिसम्बर 2026 (पूर्णाहुति / दिवस 9)' },
 ];
 
-export const YAGYA_TIME = 'प्रातः 09:30 AM';
+export const YAGYA_TIME = 'प्रातः 09:00 AM';
 
 export const TIME_SLOTS: string[] = [
   'प्रातः 09:00 AM',

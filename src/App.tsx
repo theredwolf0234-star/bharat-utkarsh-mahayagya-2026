@@ -224,6 +224,7 @@ export default function App() {
                 onProceedToPayment={handleProceedToPayment}
                 kundSummary={kundSummary}
                 registrations={registrations}
+                onBack={() => setCurrentView('home')}
               />
             )}
             {currentStep >= 3 && (
