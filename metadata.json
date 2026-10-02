@@ -1,0 +1,6 @@
+{
+  "name": "भारत उत्कर्ष महायज्ञ 2026 - 108 Hawan Kund Booking",
+  "description": "Official booking & registration portal for Maharishi Bharat Utkarsh Maha Yagya 2026. 108 Hawan Kund live tracker, UPI QR payment, and printable verified slips.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

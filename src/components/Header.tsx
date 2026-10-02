@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Ticket, MapPin } from 'lucide-react';
+import { Flame, Ticket, MapPin, Sparkles } from 'lucide-react';
 import { DevoteeUser } from '../types/yagya';
 import { YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
 
@@ -11,6 +11,7 @@ interface HeaderProps {
   currentUser: DevoteeUser | null;
   onStartBooking: (kundNum?: number | null) => void;
   onOpenStatusLookup: () => void;
+  onOpenIntroSlides?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onStartBooking,
   onOpenStatusLookup,
+  onOpenIntroSlides,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#240608] text-amber-100 border-b-2 border-amber-600/50 shadow-md">
@@ -71,6 +73,19 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">हवन कुंड बुकिंग</span>
             <span className="sm:hidden">बुकिंग</span>
           </button>
+
+          {onOpenIntroSlides && (
+            <button
+              type="button"
+              onClick={onOpenIntroSlides}
+              className="flex items-center gap-1 px-1.5 min-[360px]:px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer bg-gradient-to-r from-amber-600/30 to-orange-600/30 hover:from-amber-600/40 hover:to-orange-600/40 text-amber-200 border border-amber-400/40 whitespace-nowrap"
+              title="महायज्ञ पावन आमंत्रण एवं आकर्षण देखें"
+            >
+              <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300 shrink-0" />
+              <span className="hidden sm:inline">पावन आमंत्रण</span>
+              <span className="sm:hidden">पत्रिका</span>
+            </button>
+          )}
 
           <button
             type="button"

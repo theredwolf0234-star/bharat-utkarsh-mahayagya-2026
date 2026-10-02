@@ -18,6 +18,7 @@ import {
   PARTICIPATION_TYPES,
   DEFAULT_PRICE_PER_PERSON,
   RESERVED_KUNDS_COUNT,
+  DAKSHINA_PRESET_OPTIONS,
 } from '../constants/yagya';
 
 interface RegistrationStepViewProps {
@@ -59,11 +60,20 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
   const [date, setDate] = useState(selectedDate || YAGYA_DATES[0].date);
   const [timeSlot, setTimeSlot] = useState('9:00 AM (प्रातः 09:00 AM)');
   const [participationType, setParticipationType] = useState(PARTICIPATION_TYPES[0].label);
-  const [kundCount, setKundCount] = useState<number>(1);
+  const [kundCount] = useState<number>(1); // Single kund per registered number
   const [selectedKunds, setSelectedKunds] = useState<number[]>([
     initialKund && initialKund > RESERVED_KUNDS_COUNT ? initialKund : 10,
   ]);
   const [formError, setFormError] = useState('');
+
+  // Multiple Dakshina Options (Not fixed: 2100, 5100, 100000, and Custom)
+  const [selectedDakshina, setSelectedDakshina] = useState<number>(2100);
+  const [isCustomDakshina, setIsCustomDakshina] = useState<boolean>(false);
+  const [customAmountText, setCustomAmountText] = useState<string>('');
+
+  const finalDakshinaAmount = isCustomDakshina
+    ? (Number(customAmountText) > 0 ? Number(customAmountText) : 2100)
+    : selectedDakshina;
 
   useEffect(() => {
     if (currentUser) {
@@ -81,37 +91,11 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
     }
   }, [initialKund]);
 
-  const handleKundCountChange = (count: number) => {
-    const validCount = Math.max(1, Math.min(10, count));
-    setKundCount(validCount);
-    // If fewer kunds are currently selected than new count, keep existing
-    // If more are selected, slice to new count
-    if (selectedKunds.length > validCount) {
-      setSelectedKunds(selectedKunds.slice(0, validCount));
-    }
+  const handleSelectKund = (kundNum: number) => {
+    setSelectedKunds([kundNum]);
   };
 
-  const handleToggleKund = (kundNum: number) => {
-    if (selectedKunds.includes(kundNum)) {
-      if (selectedKunds.length > 1) {
-        setSelectedKunds(selectedKunds.filter((k) => k !== kundNum));
-      }
-    } else {
-      if (selectedKunds.length < kundCount) {
-        setSelectedKunds([...selectedKunds, kundNum]);
-      } else {
-        // If single kund, replace; if multiple, replace last
-        if (kundCount === 1) {
-          setSelectedKunds([kundNum]);
-        } else {
-          setSelectedKunds([...selectedKunds.slice(0, kundCount - 1), kundNum]);
-        }
-      }
-    }
-  };
-
-  // Requirement 2: System calculates the total amount at ₹1,100 per Kund
-  const totalAmount = kundCount * 1100;
+  const totalAmount = finalDakshinaAmount;
 
   const handleQuickLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +134,22 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
     const cleanMob = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMob.length !== 10) {
       setFormError('कृपया वैध 10 अंकों का मोबाइल नंबर दर्ज करें।');
+      return;
+    }
+
+    // Requirement: One user can book only one kund from one registered number
+    const existingActiveBooking = registrations.find(
+      (r) => r.mobile === cleanMob && r.paymentStatus !== 'rejected' && r.paymentStatus !== 'expired'
+    );
+    if (existingActiveBooking) {
+      setFormError(
+        `एक पंजीकृत मोबाइल नंबर से केवल एक ही हवन कुंड बुक किया जा सकता है। आपके मोबाइल नंबर (+91 ${cleanMob}) से पहले ही हवन कुंड #${String(existingActiveBooking.kundNumber).padStart(3, '0')} आरक्षित है (टोकन: ${existingActiveBooking.token})।`
+      );
+      return;
+    }
+
+    if (isCustomDakshina && (!customAmountText || Number(customAmountText) < 100)) {
+      setFormError('कृपया वैध सहयोग दक्षिणा राशि दर्ज करें (कम से कम ₹100)।');
       return;
     }
 
@@ -208,12 +208,12 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
       city: city.trim(),
       gotra: gotra.trim() || undefined,
       kundNumber: primaryKund,
-      kundNumbers: selectedKunds,
-      kundCount: kundCount,
+      kundNumbers: [primaryKund],
+      kundCount: 1,
       date,
-      timeSlot: '9:00 AM (प्रातः 09:00 AM)',
+      timeSlot: '9:30 AM (प्रातः 09:30 AM)',
       participationType,
-      personCount: kundCount * 2,
+      personCount: wifeName.trim() ? 2 : 1,
       amount: totalAmount,
       paymentStatus: 'temp_hold',
       expiresAt,
@@ -440,11 +440,104 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
             </div>
           </div>
 
+          {/* Multiple Dakshina Options (Not Fixed: 2100, 5100, 100000, and Custom) */}
+          <div className="border-t border-stone-200 pt-5 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+              <div>
+                <label className="block text-sm sm:text-base font-bold font-serif text-stone-900">
+                  यज्ञ सहयोग दक्षिणा विकल्प चुनें (Select Dakshina Option) <span className="text-rose-600">*</span>
+                </label>
+                <p className="text-xs text-stone-500">
+                  दक्षिणा राशि नियत नहीं है। आप अपनी श्रद्धा एवं इच्छानुसार सहयोग विकल्प चुन सकते हैं।
+                </p>
+              </div>
+              <span className="text-xs font-bold text-[#872e18] bg-amber-100 px-3 py-1 rounded-xl border border-amber-300 self-start sm:self-auto shrink-0">
+                चयनित: ₹ {totalAmount.toLocaleString('en-IN')}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+              {DAKSHINA_PRESET_OPTIONS.map((opt) => {
+                const isSelected = !isCustomDakshina && selectedDakshina === opt.amount;
+                return (
+                  <button
+                    key={opt.amount}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDakshina(opt.amount);
+                      setIsCustomDakshina(false);
+                    }}
+                    className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer flex flex-col justify-center items-center gap-1 ${
+                      isSelected
+                        ? 'border-[#872e18] bg-amber-50 shadow-md ring-2 ring-amber-400'
+                        : 'border-stone-300 bg-white hover:border-amber-400 hover:bg-stone-50'
+                    }`}
+                  >
+                    <span className={`text-base sm:text-lg font-black ${isSelected ? 'text-[#872e18]' : 'text-stone-900'}`}>
+                      {opt.label}
+                    </span>
+                    <span className="text-[10px] font-bold text-stone-500 uppercase">
+                      {opt.subtitle}
+                    </span>
+                    {isSelected && (
+                      <span className="text-[9px] font-black bg-[#872e18] text-amber-200 px-2 py-0.5 rounded-full mt-0.5">
+                        ✓ चयनित
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setIsCustomDakshina(true)}
+                className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer flex flex-col justify-center items-center gap-1 ${
+                  isCustomDakshina
+                    ? 'border-[#872e18] bg-amber-50 shadow-md ring-2 ring-amber-400'
+                    : 'border-stone-300 bg-white hover:border-amber-400 hover:bg-stone-50'
+                }`}
+              >
+                <span className={`text-sm sm:text-base font-bold ${isCustomDakshina ? 'text-[#872e18]' : 'text-stone-900'}`}>
+                  अन्य सहयोग राशि
+                </span>
+                <span className="text-[10px] text-stone-500">
+                  इच्छानुसार राशि
+                </span>
+                {isCustomDakshina && (
+                  <span className="text-[9px] font-black bg-[#872e18] text-amber-200 px-2 py-0.5 rounded-full mt-0.5">
+                    ✓ चयनित
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {isCustomDakshina && (
+              <div className="p-3 bg-amber-50/80 border border-amber-300 rounded-xl space-y-1.5 animate-in fade-in">
+                <label className="block text-xs font-bold text-[#872e18]">
+                  कृपया अपनी इच्छानुसार दक्षिणा सहयोग राशि (₹) दर्ज करें:
+                </label>
+                <div className="relative max-w-xs">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-600 font-bold text-sm">₹</span>
+                  <input
+                    type="number"
+                    min={100}
+                    step={100}
+                    placeholder="उदा. 11000, 21000, 51000..."
+                    value={customAmountText}
+                    onChange={(e) => setCustomAmountText(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-white border-2 border-amber-400 rounded-xl text-stone-900 font-bold text-sm"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="border-t border-stone-200 pt-5 space-y-4">
             <h3 className="text-sm sm:text-base font-bold font-serif text-stone-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <span>महायज्ञ तिथि, समय (9:00 AM) एवं हवन कुंड संख्या</span>
+              <span>महायज्ञ तिथि, समय (9:30 AM) एवं 108 हवन कुंड चयन</span>
               <span className="text-xs font-bold text-[#872e18] bg-amber-100 px-3 py-1 rounded-xl border border-amber-300 self-start sm:self-auto">
-                ₹ 1,100 प्रति कुंड
+                1 मोबाइल = 1 कुंड
               </span>
             </h3>
 
@@ -468,48 +561,31 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-stone-800 mb-1">
-                  2. यज्ञ समय <span className="text-emerald-700 font-bold">(9:00 AM नियत)</span>
+                  2. यज्ञ सत्र समय <span className="text-emerald-700 font-bold">(प्रातः 09:30 AM)</span>
                 </label>
                 <div className="w-full px-3 py-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-xs sm:text-sm font-bold text-[#8a1523] flex items-center justify-between shadow-2xs">
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <Clock className="w-4 h-4 text-[#8a1523] shrink-0" />
-                    <span>9:00 AM (प्रातः 09:00 AM)</span>
+                    <span>09:30 AM सत्र</span>
                   </div>
                   <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 sm:px-2 py-0.5 rounded-md font-bold shrink-0">
-                    एकल सत्र
+                    मुख्य सत्र
                   </span>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-stone-800 mb-1">
-                  3. हवन कुंडों की संख्या (₹1,100/कुंड) <span className="text-rose-600">*</span>
+                  3. हवन कुंड आरक्षण नियम <span className="text-emerald-700 font-bold">(एकल आरक्षण)</span>
                 </label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={kundCount}
-                    onChange={(e) => handleKundCountChange(Number(e.target.value))}
-                    className="w-16 sm:w-20 px-2 sm:px-3 py-2.5 bg-white border-2 border-amber-400 rounded-xl text-xs sm:text-sm font-black text-[#872e18] text-center shadow-2xs shrink-0"
-                  />
-                  <div className="flex items-center gap-1 flex-1">
-                    {[1, 2, 3, 4, 5].map((cnt) => (
-                      <button
-                        key={cnt}
-                        type="button"
-                        onClick={() => handleKundCountChange(cnt)}
-                        className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
-                          kundCount === cnt
-                            ? 'bg-[#8a1523] text-white border-[#8a1523] shadow-xs'
-                            : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-300'
-                        }`}
-                      >
-                        {cnt}
-                      </button>
-                    ))}
+                <div className="w-full px-3 py-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-xs sm:text-sm font-bold text-[#8a1523] flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <Flame className="w-4 h-4 text-[#8a1523] shrink-0" />
+                    <span>1 मोबाइल = 1 हवन कुंड</span>
                   </div>
+                  <span className="text-[10px] bg-amber-200 text-amber-950 border border-amber-400 px-2 py-0.5 rounded-md font-bold shrink-0">
+                    नियत 1 कुंड
+                  </span>
                 </div>
               </div>
             </div>
@@ -520,18 +596,18 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
               <div>
                 <h3 className="text-sm sm:text-base font-bold font-serif text-stone-900 flex items-center gap-1.5 sm:gap-2">
                   <Flame className="w-5 h-5 text-amber-600 shrink-0" />
-                  <span>अग्नि कुंड संख्या चुनें (10 से 108)</span>
+                  <span>अपना एक हवन कुंड चुनें (10 से 108)</span>
                 </h3>
                 <p className="text-[11px] sm:text-xs text-stone-500">
-                  कुंड 1 से 9 संतों व वेदाचार्यों के लिए आरक्षित हैं। आप {kundCount} कुंड चुन सकते हैं।
+                  कुंड 1 से 9 संतों व वेदाचार्यों के लिए आरक्षित हैं। नीचे से उपलब्ध कुंड पर क्लिक करके चुनें।
                 </p>
               </div>
 
               <div className="inline-flex flex-wrap items-center gap-1.5 bg-amber-100 text-amber-950 font-bold px-2.5 sm:px-3 py-1.5 rounded-xl text-xs border border-amber-300 max-w-full">
                 <Flame className="w-4 h-4 text-amber-700 shrink-0" />
                 <span>
-                  चयनित {selectedKunds.length}/{kundCount} कुंड:{' '}
-                  {selectedKunds.map((n) => `#${String(n).padStart(3, '0')}`).join(', ')}
+                  चयनित हवन कुंड:{' '}
+                  {selectedKunds.length > 0 ? `#${String(selectedKunds[0]).padStart(3, '0')}` : 'कोई नहीं'}
                 </span>
               </div>
             </div>
@@ -548,7 +624,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                       key={k.kundNumber}
                       type="button"
                       disabled={isReservedSant || isFull}
-                      onClick={() => handleToggleKund(k.kundNumber)}
+                      onClick={() => handleSelectKund(k.kundNumber)}
                       className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
                         isReservedSant
                           ? 'bg-stone-200 text-stone-400 border border-stone-300 cursor-not-allowed'
@@ -593,13 +669,13 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
           <div className="border-t border-stone-200 pt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <div>
               <span className="text-xs text-stone-500 font-bold uppercase tracking-wider block">
-                कुल देय दक्षिणा (Total Amount)
+                कुल सहयोग दक्षिणा (Selected Dakshina)
               </span>
               <span className="text-2xl sm:text-3xl font-black text-[#872e18]">
-                ₹ {totalAmount}
+                ₹ {totalAmount.toLocaleString('en-IN')}
               </span>
               <span className="text-xs font-bold text-stone-600 ml-2">
-                ({kundCount} हवन कुंड × ₹ 1,100 प्रति कुंड)
+                (1 हवन कुंड • एकल यजमान आरक्षण)
               </span>
             </div>
 

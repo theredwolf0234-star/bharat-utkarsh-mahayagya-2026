@@ -20,6 +20,7 @@ interface HomeViewProps {
   onStartBooking: (kundNum: number | null) => void;
   onOpenTickets: () => void;
   onOpenStatusLookup: () => void;
+  onOpenIntroSlides?: () => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -29,6 +30,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onStartBooking,
   onOpenTickets,
   onOpenStatusLookup,
+  onOpenIntroSlides,
 }) => {
   const [searchKund, setSearchKund] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -60,10 +62,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
             भारत उत्कर्ष महायज्ञ 2026
           </h1>
           <p className="text-amber-200 text-xs sm:text-lg font-medium max-w-2xl mx-auto leading-relaxed">
-            "राष्ट्र के उत्कर्ष में ही आपका उत्कर्ष" • 108 भव्य हवन कुंडों में आहुति समर्पण
+            "राष्ट्र के उत्कर्ष में ही आपका उत्कर्ष" • 27 नवम्बर 2026 से 5 दिसम्बर 2026 • 108 भव्य हवन कुंड
           </p>
 
-          <div className="flex flex-col min-[480px]:flex-row flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 w-full max-w-xl mx-auto">
+          <div className="flex flex-col min-[480px]:flex-row flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2 w-full max-w-2xl mx-auto">
             <button
               onClick={() => onStartBooking(null)}
               className="w-full min-[480px]:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-[#d49a37] hover:bg-[#b88226] text-stone-950 font-bold text-xs sm:text-base rounded-xl shadow-lg border border-amber-300 transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -71,6 +73,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <Flame className="w-4 h-4 fill-stone-950 shrink-0" />
               <span>हवन कुंड ऑनलाइन बुक करें</span>
             </button>
+            {onOpenIntroSlides && (
+              <button
+                onClick={onOpenIntroSlides}
+                className="w-full min-[480px]:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-stone-950 font-bold text-xs sm:text-base rounded-xl shadow-lg border border-amber-300 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-stone-950 shrink-0" />
+                <span>पावन आमंत्रण (Flyer)</span>
+              </button>
+            )}
             <button
               onClick={onOpenStatusLookup}
               className="w-full min-[480px]:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold text-xs sm:text-base rounded-xl border border-amber-300/50 transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -99,7 +110,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 महत्वपूर्ण नियम एवं व्यवस्थापक सत्यापन प्रणाली:
               </span>
               <p className="mt-1 text-stone-700">
-                यजमान द्वारा हवन कुंड चयन एवं दक्षिणा (₹1,100 प्रति कुंड, UTR नंबर व स्क्रीनशॉट) जमा करने के पश्चात, <strong>आश्रम के व्यवस्थापक (Admin) द्वारा बैंक रिकॉर्ड व रसीद सत्यापन के उपरांत ही आपकी आधिकारिक रसीद एवं टोकन पास सक्रिय व जारी किया जाएगा।</strong>
+                यजमान द्वारा हवन कुंड चयन एवं सहयोग दक्षिणा (विकल्प: ₹2,100, ₹5,100, ₹1,00,000 अथवा इच्छानुसार, UTR नंबर व स्क्रीनशॉट) जमा करने के पश्चात, <strong>आश्रम के व्यवस्थापक (Admin) द्वारा बैंक रिकॉर्ड व रसीद सत्यापन के उपरांत ही आपकी आधिकारिक रसीद एवं टोकन पास सक्रिय व जारी किया जाएगा।</strong>
+              </p>
+              <p className="mt-1 text-amber-900 font-bold text-xs bg-amber-100/70 inline-block px-2 py-0.5 rounded border border-amber-300/60">
+                ⚠️ नियम: एक पंजीकृत मोबाइल नंबर से केवल एक ही हवन कुंड बुक किया जा सकता है।
               </p>
             </div>
           </div>

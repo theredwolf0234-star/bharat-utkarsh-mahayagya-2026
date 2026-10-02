@@ -588,9 +588,24 @@ app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
     }
 
     const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
+
+    // Enforce rule: One user can book only one kund from one registered number
+    const allBookings = Array.from(registrationsStore.values());
+    const existingActiveBooking = allBookings.find(
+      (b: StoredRegistration) =>
+        b.mobile === cleanMobile &&
+        b.paymentStatus !== 'rejected' &&
+        b.paymentStatus !== 'expired'
+    );
+    if (existingActiveBooking) {
+      return res.status(400).json({
+        error: `इस पंजीकृत मोबाइल नंबर (+91 ${cleanMobile}) से पहले ही कुंड #${String(existingActiveBooking.kundNumber).padStart(3, '0')} आरक्षित/बुक है। नियम अनुसार एक मोबाइल नंबर से केवल एक ही कुंड बुक किया जा सकता है।`,
+      });
+    }
+
     const count = Number(personCount) || (wifeName ? 2 : 1);
-    const resolvedKundCount = Number(kundCount) || (Array.isArray(kundNumbers) && kundNumbers.length > 0 ? kundNumbers.length : 1);
-    const amount = resolvedKundCount * 1100; // Requirement: ₹1,100 per Kund
+    const resolvedKundCount = 1; // Strict: 1 kund per user
+    const amount = Number(req.body.amount) || 2100; // Flexible dakshina options: 2100, 5100, 100000, etc.
 
     const settings = getSystemSettingsFromDb();
 
@@ -719,12 +734,12 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
           kundNumber: primaryKund,
           kundCount: kCount,
           kundNumbers: Array.isArray(src.kundNumbers) && src.kundNumbers.length > 0 ? src.kundNumbers : [primaryKund],
-          date: src.date || '2026-11-16',
+          date: src.date || '2026-11-27',
           timeSlot: src.timeSlot || '9:00 AM (प्रातः 09:00 AM)',
           address: src.address || 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304',
           gotra: src.gotra,
           personCount: src.personCount || (kCount * 2),
-          amount: src.amount || (kCount * 1100),
+          amount: Number(src.amount) || 2100,
           paymentStatus: 'pending',
           createdAt: src.createdAt || new Date().toISOString(),
         };

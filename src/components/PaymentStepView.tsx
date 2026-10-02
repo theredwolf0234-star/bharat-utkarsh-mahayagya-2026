@@ -185,7 +185,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
             </div>
             <div>
               <span className="text-stone-500 font-bold block text-[10px] min-[360px]:text-[11px]">सत्यापित दक्षिणा</span>
-              <span className="font-bold text-[#872e18]">₹ {activeReg.amount} (₹1,100/कुंड)</span>
+              <span className="font-bold text-[#872e18]">₹ {Number(activeReg.amount).toLocaleString('en-IN')} (सहयोग दक्षिणा)</span>
             </div>
             <div>
               <span className="text-stone-500 font-bold block text-[10px] min-[360px]:text-[11px]">बैंक UTR</span>
@@ -326,7 +326,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
             <div>
               <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">कुल देय दक्षिणा (Total Amount)</span>
               <span className="font-bold text-[#872e18] text-xs sm:text-sm">
-                ₹ {activeReg.amount} ({activeReg.kundCount || 1} कुंड × ₹1,100)
+                ₹ {Number(activeReg.amount).toLocaleString('en-IN')} ({activeReg.kundCount || 1} कुंड • सहयोग दक्षिणा)
               </span>
             </div>
             <div>
@@ -453,7 +453,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
 
   // CASE 5: PAYMENT SUBMISSION FORM (Showing official SBI QR.jpg image)
   const kundCount = activeReg?.kundCount || 1;
-  const amount = activeReg?.amount || (kundCount * 1100);
+  const amount = activeReg?.amount || 2100;
   const kundFormatted =
     activeReg?.kundNumbers && activeReg.kundNumbers.length > 0
       ? activeReg.kundNumbers.map((n) => `#${String(n).padStart(3, '0')}`).join(', ')
@@ -482,9 +482,9 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
             <span className="text-xs font-bold text-stone-500 uppercase tracking-wider block">
               कुल देय दक्षिणा
             </span>
-            <span className="text-2xl sm:text-3xl font-black text-[#872e18]">₹ {amount}</span>
+            <span className="text-2xl sm:text-3xl font-black text-[#872e18]">₹ {Number(amount).toLocaleString('en-IN')}</span>
             <span className="text-[11px] font-bold text-stone-600 block">
-              ({kundCount} हवन कुंड × ₹ 1,100 प्रति कुंड)
+              ({kundCount} हवन कुंड • सहयोग दक्षिणा)
             </span>
           </div>
         </div>

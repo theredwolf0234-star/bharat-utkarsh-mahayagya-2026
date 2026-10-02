@@ -446,7 +446,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                               </div>
                               <div>
                                 <strong className="text-stone-500 block text-[11px]">कुल दक्षिणा राशि:</strong>
-                                <span className="font-bold text-[#872e18]">₹ {b.amount} ({b.kundCount || 1} × ₹1100)</span>
+                                <span className="font-bold text-[#872e18]">₹ {Number(b.amount).toLocaleString('en-IN')}</span>
                               </div>
                               <div className="col-span-2 pt-1 border-t border-stone-200">
                                 <strong className="text-stone-500 block text-[11px]">बैंक UPI Ref / UTR विवरण:</strong>

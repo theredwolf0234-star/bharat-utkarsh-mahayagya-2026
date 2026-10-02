@@ -117,16 +117,16 @@ export const PrintableSlipModal: React.FC<PrintableSlipModalProps> = ({
             </tr>` : ''}
             <tr>
               <td class="label">आरक्षित कुंड संख्या:</td>
-              <td class="value">${registration.kundCount || 1} कुंड (₹1,100 प्रति कुंड)</td>
+              <td class="value">${registration.kundCount || 1} कुंड</td>
             </tr>
             <tr>
               <td class="label">दक्षिणा स्थिति:</td>
               <td class="value">
                 ${registration.paymentStatus === 'paid' ? `
-                  <span class="status-paid">₹ ${registration.amount} (सत्यापित व स्वीकृत - Payment Verified)</span>
+                  <span class="status-paid">₹ ${Number(registration.amount).toLocaleString('en-IN')} (सत्यापित व स्वीकृत - Payment Verified)</span>
                 ` : `
                   <span style="color: #991b1b; background: #fee2e2; padding: 3px 8px; border-radius: 6px; display: inline-block; font-size: 12px; font-weight: bold;">
-                    ₹ ${registration.amount} (भुगतान सत्यापन लंबित - Payment Pending Verification)
+                    ₹ ${Number(registration.amount).toLocaleString('en-IN')} (भुगतान सत्यापन लंबित - Payment Pending Verification)
                   </span>
                 `}
               </td>
@@ -338,17 +338,17 @@ export const PrintableSlipModal: React.FC<PrintableSlipModalProps> = ({
               )}
               <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-0.5 sm:gap-2">
                 <span className="text-stone-500 font-medium shrink-0">आरक्षित कुंड:</span>
-                <span className="font-bold text-stone-900 sm:text-right">{registration.kundCount || 1} कुंड (₹1,100 प्रति कुंड)</span>
+                <span className="font-bold text-stone-900 sm:text-right">{registration.kundCount || 1} कुंड</span>
               </div>
               <div className="flex flex-col sm:flex-row sm:justify-between py-1.5 border-b border-stone-200 gap-1 sm:gap-2">
                 <span className="text-stone-500 font-medium shrink-0">दक्षिणा स्थिति:</span>
                 {registration.paymentStatus === 'paid' ? (
                   <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded sm:text-right inline-block">
-                    ₹ {registration.amount} (सत्यापित व स्वीकृत - Payment Verified)
+                    ₹ {Number(registration.amount).toLocaleString('en-IN')} (सत्यापित व स्वीकृत - Payment Verified)
                   </span>
                 ) : (
                   <span className="font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded sm:text-right inline-block">
-                    ₹ {registration.amount} (भुगतान सत्यापन लंबित - Payment Pending Verification)
+                    ₹ {Number(registration.amount).toLocaleString('en-IN')} (भुगतान सत्यापन लंबित - Payment Pending Verification)
                   </span>
                 )}
               </div>

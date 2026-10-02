@@ -23,8 +23,10 @@ import { DevoteeTicketsPortal } from './components/DevoteeTicketsPortal';
 import { AdminPortalModal } from './components/AdminPortalModal';
 import { PrintableSlipModal } from './components/PrintableSlipModal';
 import { StatusLookupModal } from './components/StatusLookupModal';
+import { OpeningSlideshow } from './components/OpeningSlideshow';
 
 export default function App() {
+  const [showOpeningSlideshow, setShowOpeningSlideshow] = useState<boolean>(true);
   const [currentView, setCurrentView] = useState<'home' | 'register' | 'tickets'>('home');
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [selectedDate, setSelectedDate] = useState<string>(YAGYA_DATES[0].date);
@@ -131,7 +133,7 @@ export default function App() {
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     expiryMinutes: 15,
     upiId: 'maharishivedvigyan@sbi',
-    pricePerPerson: 1100,
+    pricePerPerson: 2100,
     testModeEnabled: false,
   });
 
@@ -180,6 +182,16 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Full-screen opening flyer slideshow on website entry (2-3s each)
+  if (showOpeningSlideshow) {
+    return (
+      <OpeningSlideshow
+        slideDurationMs={2500}
+        onComplete={() => setShowOpeningSlideshow(false)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#faf5eb] flex flex-col justify-between text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
       {/* Top Pure Vedic Header with Navigation and Stepper */}
@@ -191,6 +203,7 @@ export default function App() {
         currentUser={currentUser}
         onStartBooking={handleStartBooking}
         onOpenStatusLookup={() => setShowStatusModal(true)}
+        onOpenIntroSlides={() => setShowOpeningSlideshow(true)}
       />
 
       {/* Main Content Body */}
@@ -203,6 +216,7 @@ export default function App() {
             onStartBooking={handleStartBooking}
             onOpenTickets={() => setCurrentView('tickets')}
             onOpenStatusLookup={() => setShowStatusModal(true)}
+            onOpenIntroSlides={() => setShowOpeningSlideshow(true)}
           />
         )}
 
