@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Sparkles,
   Flame,
@@ -9,8 +9,9 @@ import {
   MapPin,
   Compass,
   ExternalLink,
+  Lock,
 } from 'lucide-react';
-import { KundSummary } from '../types/yagya';
+import { KundSummary, KundLiveItem } from '../types/yagya';
 import { YAGYA_DATES, VENUE_ADDRESS, YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
 
 interface HomeViewProps {
@@ -35,16 +36,70 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [searchKund, setSearchKund] = useState('');
   const [filterType, setFilterType] = useState('all');
 
+  // Real-time server live status for all 108 Kunds
+  const [liveKunds, setLiveKunds] = useState<KundLiveItem[]>([]);
+  const [liveCounts, setLiveCounts] = useState({
+    available: 99,
+    locked: 0,
+    booked: 0,
+    reserved: 9,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`/api/kunds/status?date=${selectedDate}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data && Array.isArray(data.kunds)) {
+            setLiveKunds(data.kunds);
+            setLiveCounts({
+              available: data.availableCount ?? 99,
+              locked: data.lockedCount ?? 0,
+              booked: data.bookedCount ?? 0,
+              reserved: data.santReservedCount ?? 9,
+            });
+          }
+        }
+      } catch (e) {
+        // Fallback to local kundSummary
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [selectedDate]);
+
+  // Merge live server data with local fallback
+  const allKunds = useMemo<KundLiveItem[]>(() => {
+    if (liveKunds.length > 0) return liveKunds;
+    return kundSummary.list.map((k) => {
+      const isReserved = k.isReserved;
+      const isBooked = !isReserved && k.bookedCount > 0;
+      return {
+        kundNumber: k.kundNumber,
+        formattedNumber: k.formattedNumber,
+        status: isReserved ? ('RESERVED' as const) : isBooked ? ('BOOKED' as const) : ('AVAILABLE' as const),
+        isSantReserved: isReserved,
+      };
+    });
+  }, [liveKunds, kundSummary]);
+
   const filteredKunds = useMemo(() => {
-    return kundSummary.list.filter((k) => {
+    return allKunds.filter((k) => {
       if (searchKund && !String(k.kundNumber).includes(searchKund)) return false;
-      if (filterType === 'available') return !k.isReserved && k.bookedCount === 0;
-      if (filterType === 'partial') return !k.isReserved && k.bookedCount === 1;
-      if (filterType === 'full') return !k.isReserved && k.bookedCount >= 2;
-      if (filterType === 'reserved') return k.isReserved;
+      if (filterType === 'available') return k.status === 'AVAILABLE';
+      if (filterType === 'locked') return k.status === 'LOCKED';
+      if (filterType === 'booked') return k.status === 'BOOKED';
+      if (filterType === 'reserved') return k.status === 'RESERVED';
       return true;
     });
-  }, [kundSummary, searchKund, filterType]);
+  }, [allKunds, searchKund, filterType]);
 
   return (
     <div className="w-full pb-14 font-sans bg-[#faf5eb]">
@@ -107,13 +162,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-[#8a1523] shrink-0 mt-0.5" />
             <div className="text-xs sm:text-sm text-stone-800 leading-relaxed">
               <span className="font-bold text-[#8a1523] text-xs sm:text-base block">
-                महत्वपूर्ण नियम एवं व्यवस्थापक सत्यापन प्रणाली:
+                महत्वपूर्ण नियम एवं 5-मिनट रियल-टाइम लॉकिंग प्रणाली:
               </span>
               <p className="mt-1 text-stone-700">
-                यजमान द्वारा हवन कुंड चयन एवं सहयोग दक्षिणा (विकल्प: ₹2,100, ₹5,100, ₹1,00,000 अथवा इच्छानुसार, UTR नंबर व स्क्रीनशॉट) जमा करने के पश्चात, <strong>आश्रम के व्यवस्थापक (Admin) द्वारा बैंक रिकॉर्ड व रसीद सत्यापन के उपरांत ही आपकी आधिकारिक रसीद एवं टोकन पास सक्रिय व जारी किया जाएगा।</strong>
+                हवन कुंड चुनते ही वह आपके लिए <strong>5 मिनट हेतु सुरक्षित लॉक</strong> हो जाता है। 
+                एक मोबाइल नंबर से <strong>एक दिन में केवल एक ही कुंड</strong> आरक्षित किया जा सकता है। दक्षिणा जमा करने पर आश्रम व्यवस्थापक सत्यापन के उपरांत आधिकारिक टोकन WhatsApp पर जारी होगा।
               </p>
               <p className="mt-1 text-amber-900 font-bold text-xs bg-amber-100/70 inline-block px-2 py-0.5 rounded border border-amber-300/60">
-                ⚠️ नियम: एक पंजीकृत मोबाइल नंबर से केवल एक ही हवन कुंड बुक किया जा सकता है।
+                🔒 नियम: 1 मोबाइल = 1 हवन कुंड प्रतिदिन • 5 मिनट अस्थायी लॉक
               </p>
             </div>
           </div>
@@ -135,7 +191,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <span>108 हवन कुंड लाइव स्थिति व उपलब्धता</span>
               </h2>
               <p className="text-[11px] sm:text-xs text-stone-600 mt-1">
-                कुंड 001 से 009 संतों व वेदाचार्यों हेतु आरक्षित हैं। कुंड 10 से 108 यजमानों हेतु उपलब्ध हैं।
+                कुंड 001 से 009 संतों हेतु आरक्षित • कुंड 10 से 108 यजमानों हेतु उपलब्ध • 5-मिनट रियल-टाइम लॉक सुरक्षा
               </p>
             </div>
 
@@ -158,23 +214,32 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
 
-          {/* Availability Summary Stats Cards */}
+          {/* Availability Summary Stats Cards (AVAILABLE / LOCKED / BOOKED / RESERVED) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
             <div className="bg-emerald-50 border border-emerald-300 rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 text-center">
-              <span className="text-[10px] min-[360px]:text-[11px] text-emerald-800 font-bold block truncate">उपलब्ध कुंड</span>
-              <span className="text-xl sm:text-2xl font-black text-emerald-900">{kundSummary.totalAvailable}</span>
+              <span className="text-[10px] min-[360px]:text-[11px] text-emerald-800 font-bold block truncate">
+                उपलब्ध (AVAILABLE)
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-emerald-900">{liveCounts.available}</span>
             </div>
-            <div className="bg-amber-50 border border-amber-300 rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 text-center">
-              <span className="text-[10px] min-[360px]:text-[11px] text-amber-800 font-bold block truncate">1 यजमान आरक्षित</span>
-              <span className="text-xl sm:text-2xl font-black text-amber-900">{kundSummary.totalPartial}</span>
+            <div className="bg-amber-50 border-2 border-amber-400 rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 text-center animate-pulse">
+              <span className="text-[10px] min-[360px]:text-[11px] text-amber-900 font-bold block truncate flex items-center justify-center gap-1">
+                <Lock className="w-3 h-3 text-amber-700 inline" />
+                <span>लॉक्ड (5m LOCKED)</span>
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-amber-950">{liveCounts.locked}</span>
             </div>
             <div className="bg-rose-50 border border-rose-300 rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 text-center">
-              <span className="text-[10px] min-[360px]:text-[11px] text-rose-800 font-bold block truncate">पूर्ण आरक्षित</span>
-              <span className="text-xl sm:text-2xl font-black text-rose-900">{kundSummary.totalFull}</span>
+              <span className="text-[10px] min-[360px]:text-[11px] text-rose-800 font-bold block truncate">
+                आरक्षित (BOOKED)
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-rose-900">{liveCounts.booked}</span>
             </div>
             <div className="bg-purple-50 border border-purple-300 rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 text-center">
-              <span className="text-[10px] min-[360px]:text-[11px] text-purple-800 font-bold block truncate">संत आरक्षित</span>
-              <span className="text-xl sm:text-2xl font-black text-purple-900">{kundSummary.totalReserved}</span>
+              <span className="text-[10px] min-[360px]:text-[11px] text-purple-800 font-bold block truncate">
+                संत आरक्षित (1-9)
+              </span>
+              <span className="text-xl sm:text-2xl font-black text-purple-900">{liveCounts.reserved}</span>
             </div>
           </div>
 
@@ -194,9 +259,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 text-xs">
               {[
                 { id: 'all', label: 'सभी (108)' },
-                { id: 'available', label: 'उपलब्ध' },
-                { id: 'partial', label: '1 सीट' },
-                { id: 'full', label: 'पूर्ण' },
+                { id: 'available', label: `उपलब्ध (${liveCounts.available})` },
+                { id: 'locked', label: `🔒 लॉक्ड (${liveCounts.locked})` },
+                { id: 'booked', label: `आरक्षित (${liveCounts.booked})` },
                 { id: 'reserved', label: 'संत आरक्षित (1-9)' },
               ].map((pill) => (
                 <button
@@ -214,32 +279,62 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
 
-          {/* Hawan Kund 1 to 108 Interactive Grid */}
+          {/* Hawan Kund 1 to 108 Interactive Grid (Strict 4 States) */}
           <div className="bg-[#faf5eb] p-2 sm:p-4 rounded-xl sm:rounded-2xl border border-amber-200 max-h-[380px] overflow-y-auto">
             <div className="grid grid-cols-4 min-[360px]:grid-cols-5 min-[420px]:grid-cols-6 sm:grid-cols-6 md:grid-cols-9 lg:grid-cols-12 gap-1.5 sm:gap-2">
               {filteredKunds.map((k) => {
-                const isSant = k.isReserved;
-                const isFull = !isSant && k.bookedCount >= 2;
-                const isPartial = !isSant && k.bookedCount === 1;
+                const isSant = k.status === 'RESERVED';
+                const isBooked = k.status === 'BOOKED';
+                const isLocked = k.status === 'LOCKED';
+                const isLockedSelf = Boolean(k.isLockedBySelf);
 
                 let cardStyle = 'bg-white text-stone-800 border-stone-300 hover:border-amber-400 hover:bg-amber-50';
-                if (isSant) cardStyle = 'bg-purple-100 text-purple-900 border-purple-300 opacity-80 cursor-not-allowed';
-                else if (isFull) cardStyle = 'bg-rose-100 text-rose-900 border-rose-300 cursor-not-allowed';
-                else if (isPartial) cardStyle = 'bg-amber-100 text-amber-900 border-amber-300';
+                let statusLabel = 'उपलब्ध';
+                let disabled = false;
+
+                if (isSant) {
+                  cardStyle = 'bg-purple-100 text-purple-900 border-purple-300 opacity-80 cursor-not-allowed';
+                  statusLabel = 'संत';
+                  disabled = true;
+                } else if (isBooked) {
+                  cardStyle = 'bg-rose-100 text-rose-900 border-rose-300 cursor-not-allowed';
+                  statusLabel = 'आरक्षित';
+                  disabled = true;
+                } else if (isLocked) {
+                  if (isLockedSelf) {
+                    cardStyle = 'bg-amber-100 text-amber-950 border-2 border-amber-500 shadow-md ring-2 ring-amber-400';
+                    statusLabel = 'आपका लॉक';
+                    disabled = false;
+                  } else {
+                    cardStyle = 'bg-amber-50 text-amber-950 border-2 border-dashed border-amber-400 opacity-90 cursor-not-allowed animate-pulse';
+                    const remSec = k.lockInfo?.remainingSeconds;
+                    const mins = remSec ? Math.floor(remSec / 60) : 5;
+                    statusLabel = `🔒 लॉक्ड (${mins}m)`;
+                    disabled = true;
+                  }
+                }
 
                 return (
                   <button
                     key={k.kundNumber}
                     type="button"
-                    disabled={isSant || isFull}
+                    disabled={disabled}
                     onClick={() => onStartBooking(k.kundNumber)}
                     className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl border text-center transition-all flex flex-col items-center justify-center cursor-pointer ${cardStyle}`}
-                    title={`कुंड #${k.formattedNumber}`}
+                    title={
+                      isSant
+                        ? 'संतों व आचार्यों हेतु आरक्षित'
+                        : isBooked
+                        ? `हवन कुंड #${k.formattedNumber} आरक्षित (Booked) है`
+                        : isLocked
+                        ? `हवन कुंड #${k.formattedNumber} 5 मिनट के लिए अस्थायी लॉक्ड है`
+                        : `हवन कुंड #${k.formattedNumber} चुनें व बुक करें`
+                    }
                   >
                     <span className="text-[9px] leading-none opacity-60">#</span>
                     <span className="text-xs sm:text-sm font-black">{k.formattedNumber}</span>
                     <span className="text-[8px] sm:text-[9px] mt-0.5 font-bold truncate w-full">
-                      {isSant ? 'संत' : isFull ? 'पूर्ण' : isPartial ? '1 बुक' : 'मुक्त'}
+                      {statusLabel}
                     </span>
                   </button>
                 );

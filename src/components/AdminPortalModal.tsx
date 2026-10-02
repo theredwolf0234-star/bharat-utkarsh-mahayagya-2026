@@ -51,18 +51,57 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const [adminTab, setAdminTab] = useState<'pending' | 'bookings' | 'database' | 'audit'>('pending');
+  const [adminTab, setAdminTab] = useState<'pending' | 'bookings' | 'locks' | 'database' | 'audit'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilterType, setSearchFilterType] = useState<'all' | 'mobile' | 'token' | 'kund'>('all');
+  const [searchStatusFilter, setSearchStatusFilter] = useState<string>('all');
   const [viewScreenshotUrl, setViewScreenshotUrl] = useState<string | null>(null);
   const [rejectModalReg, setRejectModalReg] = useState<Registration | null>(null);
   const [rejectionReasonInput, setRejectionReasonInput] = useState<string>('बैंक खाते में दक्षिणा अप्राप्त अथवा अमान्य UTR नंबर');
   const [approvedToast, setApprovedToast] = useState<{ token: string; mobile: string; name: string } | null>(null);
+  const [activeLocks, setActiveLocks] = useState<any[]>([]);
 
   const [sqlQuery, setSqlQuery] = useState(
     'SELECT id, token, full_name, kund_number, date, amount, payment_status, utr_number FROM registrations ORDER BY created_at DESC LIMIT 10;'
   );
   const [sqlResult, setSqlResult] = useState<{ columns: string[]; rows: (string | number)[][] } | null>(null);
   const [isFetchingServer, setIsFetchingServer] = useState(false);
+
+  const fetchActiveLocks = async () => {
+    try {
+      const res = await fetch('/api/admin/locks', {
+        headers: {
+          Authorization: 'Bearer maharishi_master_session_token',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.locks)) {
+          setActiveLocks(data.locks);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch active locks:', e);
+    }
+  };
+
+  const handleForceReleaseLock = async (lockId: string, kundNumber: number) => {
+    if (!window.confirm(`क्या आप हवन कुंड #${kundNumber} के इस 5-मिनट लॉक को हटाकर तुरंत मुक्त करना चाहते हैं?`)) return;
+    try {
+      const res = await fetch(`/api/admin/locks/${lockId}/release`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer maharishi_master_session_token',
+        },
+      });
+      if (res.ok) {
+        fetchActiveLocks();
+        fetchServerBookings();
+      }
+    } catch (e) {
+      console.warn('Force release error:', e);
+    }
+  };
 
   const fetchServerBookings = async () => {
     setIsFetchingServer(true);
@@ -78,6 +117,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           setRegistrations(data.bookings);
         }
       }
+      fetchActiveLocks();
     } catch (e) {
       console.warn('Failed to fetch server bookings:', e);
     } finally {
@@ -91,6 +131,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     if (adminUsername.trim() === 'maharishi_admin' && adminPassword === 'admin123') {
       setIsAdminLoggedIn(true);
       fetchServerBookings();
+      fetchActiveLocks();
     } else {
       setLoginError('अमान्य व्यवस्थापक यूज़रनेम अथवा पासवर्ड। कृपया सही क्रेडेंशियल्स दर्ज करें।');
     }
@@ -247,11 +288,47 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
+  React.useEffect(() => {
+    if (!isAdminLoggedIn) return;
+    fetchActiveLocks();
+    const interval = setInterval(() => {
+      fetchActiveLocks();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isAdminLoggedIn]);
+
+  const totalKundsCount = 108;
+  const bookedCount = registrations.filter(
+    (r) => r.paymentStatus === 'paid' || r.paymentStatus === 'pending' || r.paymentStatus === 'counter_pay'
+  ).length;
+  const lockedCount = activeLocks.length;
+  const santReservedCount = 9;
+  const availableCount = Math.max(0, totalKundsCount - bookedCount - lockedCount - santReservedCount);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayRegistrationsCount = registrations.filter((r) => {
+    if (r.createdAt && r.createdAt.startsWith(todayStr)) return true;
+    if (r.date === todayStr) return true;
+    return false;
+  }).length;
+
   const pendingList = registrations.filter((r) => r.paymentStatus === 'pending');
 
   const filteredBookings = registrations.filter((r) => {
+    if (searchStatusFilter !== 'all' && r.paymentStatus !== searchStatusFilter) {
+      return false;
+    }
     if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
+    if (searchFilterType === 'mobile') {
+      return r.mobile.includes(q);
+    }
+    if (searchFilterType === 'token') {
+      return r.token.toLowerCase().includes(q);
+    }
+    if (searchFilterType === 'kund') {
+      return String(r.kundNumber) === q || String(r.kundNumber).includes(q);
+    }
     return (
       r.token.toLowerCase().includes(q) ||
       (r.fullName && r.fullName.toLowerCase().includes(q)) ||
@@ -261,6 +338,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
       (r.utrNumber && r.utrNumber.toLowerCase().includes(q))
     );
   });
+
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
@@ -353,6 +431,85 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
             </div>
           ) : (
             <div className="space-y-5">
+              {/* TOP KPI CARDS: 108 KUNDS, AVAILABLE, 5M LOCKED, BOOKED, TODAY'S REGISTRATIONS */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
+                <div className="bg-white border-2 border-stone-200 rounded-2xl p-3 sm:p-3.5 shadow-2xs">
+                  <div className="text-[11px] font-bold text-stone-500 flex items-center justify-between">
+                    <span>कुल हवन कुंड</span>
+                    <span className="text-stone-400 font-mono text-[10px]">TOTAL</span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-stone-900 font-mono mt-1">
+                    {totalKundsCount}
+                  </div>
+                  <div className="text-[10px] text-stone-500 mt-0.5 truncate">
+                    1-9 संत + 10-108 यजमान
+                  </div>
+                </div>
+
+                <div className="bg-emerald-50/70 border-2 border-emerald-300 rounded-2xl p-3 sm:p-3.5 shadow-2xs">
+                  <div className="text-[11px] font-bold text-emerald-800 flex items-center justify-between">
+                    <span>उपलब्ध कुंड</span>
+                    <span className="text-emerald-700 font-mono text-[10px]">AVAILABLE</span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono mt-1">
+                    {availableCount}
+                  </div>
+                  <div className="text-[10px] text-emerald-800 mt-0.5 truncate">
+                    तत्काल बुकिंग हेतु खुले
+                  </div>
+                </div>
+
+                <div
+                  className="bg-amber-50/80 border-2 border-amber-300 rounded-2xl p-3 sm:p-3.5 shadow-2xs cursor-pointer hover:bg-amber-100/70 transition-all"
+                  onClick={() => setAdminTab('locks')}
+                  title="सक्रिय 5-मिनट लॉक्स देखने हेतु क्लिक करें"
+                >
+                  <div className="text-[11px] font-bold text-amber-900 flex items-center justify-between">
+                    <span className="flex items-center gap-1">🔒 5m लॉक्ड</span>
+                    <span className="text-amber-800 font-mono text-[10px]">LOCKED</span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-amber-800 font-mono mt-1 flex items-center gap-1.5">
+                    {lockedCount}
+                    {lockedCount > 0 && (
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                    )}
+                  </div>
+                  <div className="text-[10px] text-amber-900 mt-0.5 truncate font-medium">
+                    भुगतान प्रक्रियाधीन
+                  </div>
+                </div>
+
+                <div
+                  className="bg-rose-50/70 border-2 border-rose-300 rounded-2xl p-3 sm:p-3.5 shadow-2xs cursor-pointer hover:bg-rose-100/70 transition-all"
+                  onClick={() => setAdminTab('bookings')}
+                  title="सभी बुकिंग्स देखने हेतु क्लिक करें"
+                >
+                  <div className="text-[11px] font-bold text-rose-900 flex items-center justify-between">
+                    <span>आरक्षित / बुक</span>
+                    <span className="text-rose-800 font-mono text-[10px]">BOOKED</span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-[#8a1523] font-mono mt-1">
+                    {bookedCount}
+                  </div>
+                  <div className="text-[10px] text-rose-900 mt-0.5 truncate">
+                    पुष्ट / सत्यापन कतार
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50/70 border-2 border-indigo-300 rounded-2xl p-3 sm:p-3.5 shadow-2xs col-span-2 sm:col-span-1">
+                  <div className="text-[11px] font-bold text-indigo-900 flex items-center justify-between">
+                    <span>आज के पंजीकरण</span>
+                    <span className="text-indigo-700 font-mono text-[10px]">TODAY</span>
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-indigo-800 font-mono mt-1">
+                    {todayRegistrationsCount}
+                  </div>
+                  <div className="text-[10px] text-indigo-900 mt-0.5 truncate">
+                    आज दर्ज कुल यजमान
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2 border-b border-stone-200 pb-2 overflow-x-auto no-scrollbar">
                 <button
                   onClick={() => setAdminTab('pending')}
@@ -384,6 +541,23 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </button>
 
                 <button
+                  onClick={() => setAdminTab('locks')}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    adminTab === 'locks'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-amber-50 text-amber-900 border border-amber-300'
+                  }`}
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>सक्रिय लॉक्स (5m Locks)</span>
+                  {activeLocks.length > 0 && (
+                    <span className="bg-white text-amber-900 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                      {activeLocks.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
                   onClick={() => setAdminTab('database')}
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
                     adminTab === 'database'
@@ -412,7 +586,10 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={fetchServerBookings}
+                  onClick={() => {
+                    fetchServerBookings();
+                    fetchActiveLocks();
+                  }}
                   disabled={isFetchingServer}
                   className="ml-auto flex items-center gap-1.5 px-3 py-2 bg-amber-100 hover:bg-amber-200 text-[#872e18] rounded-xl text-xs font-bold border border-amber-300 cursor-pointer whitespace-nowrap transition-all shadow-xs"
                   title="सर्वर से नवीनतम बुकिंग्स व UTR रिकॉर्ड्स ताज़ा करें"
@@ -560,28 +737,228 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                 </div>
               )}
 
+              {adminTab === 'locks' && (
+                <div className="space-y-4">
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-bold text-sm sm:text-base text-amber-950 font-serif flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-amber-700" />
+                        <span>सक्रिय 5-मिनट अस्थायी लॉक्स (Real-Time Kund Locks)</span>
+                      </h4>
+                      <p className="text-xs text-amber-900/90 mt-0.5">
+                        जब कोई यजमान कुंड चुनकर भुगतान स्क्रीन पर जाता है, तो कुंड 5 मिनट के लिए लॉक हो जाता है। यदि समय समाप्त होता है तो कुंड स्वतः मुक्त हो जाता है। व्यवस्थापक चाहें तो यहीं से तुरंत अनलॉक भी कर सकते हैं।
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm sm:text-base font-black text-amber-950 bg-amber-200 px-3.5 py-1.5 rounded-xl border border-amber-300">
+                        {activeLocks.length} सक्रिय लॉक्स
+                      </span>
+                      <button
+                        type="button"
+                        onClick={fetchActiveLocks}
+                        className="p-2 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl cursor-pointer"
+                        title="लॉक्स ताज़ा करें"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeLocks.length === 0 ? (
+                    <div className="text-center py-12 bg-white rounded-2xl border border-stone-200 text-stone-500">
+                      <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto mb-2" />
+                      <div className="font-bold text-base text-stone-800">वर्तमान में कोई सक्रिय लॉक नहीं है!</div>
+                      <p className="text-xs text-stone-500 mt-1">सभी उपलब्ध हवन कुंड साधकों हेतु पूर्णतः मुक्त व चयन योग्य हैं।</p>
+                    </div>
+                  ) : (
+                    <div className="border border-stone-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                      <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-amber-50 text-stone-700 font-bold border-b border-amber-200 sticky top-0">
+                            <tr>
+                              <th className="py-2.5 px-3">कुंड संख्या</th>
+                              <th className="py-2.5 px-3">यज्ञ तिथि</th>
+                              <th className="py-2.5 px-3">मोबाइल नंबर</th>
+                              <th className="py-2.5 px-3">यजमान का नाम</th>
+                              <th className="py-2.5 px-3">लॉक प्रारंभ</th>
+                              <th className="py-2.5 px-3">लॉक समाप्ति</th>
+                              <th className="py-2.5 px-3">शेष समय (Countdown)</th>
+                              <th className="py-2.5 px-3 text-right">प्रशासक कार्यवाही</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100">
+                            {activeLocks.map((lock) => {
+                              const lId = String(lock.lockId || lock.lock_id || '');
+                              const kId = Number(lock.kundId || lock.kund_id || 0);
+                              const bDate = String(lock.bookingDate || lock.booking_date || '');
+                              const mob = String(lock.mobileNumber || lock.mobile_number || '');
+                              const dName = lock.devoteeName || lock.user_name || 'साधक (अनाम)';
+                              const lAt = lock.lockedAt || lock.locked_at;
+                              const lExp = lock.lockExpiresAt || lock.lock_expires_at;
+                              const remainingSec = Math.max(0, Number(lock.remainingSeconds) || 0);
+                              const mins = Math.floor(remainingSec / 60);
+                              const secs = remainingSec % 60;
+                              const timeFormatted = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+
+                              return (
+                                <tr key={lId} className="hover:bg-amber-50/50">
+                                  <td className="py-2.5 px-3 font-mono font-bold text-[#8a1523] whitespace-nowrap">
+                                    हवन कुंड #{String(kId).padStart(3, '0')}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-medium whitespace-nowrap">
+                                    {bDate}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-mono whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5">
+                                      <span>+91 {mob}</span>
+                                      <a
+                                        href={`https://wa.me/91${mob.replace(/\D/g, '').slice(-10)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-emerald-700 hover:text-emerald-900"
+                                        title="WhatsApp चैट खोलें"
+                                      >
+                                        <MessageCircle className="w-3.5 h-3.5" />
+                                      </a>
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-stone-700">
+                                    {dName}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-mono text-[11px] text-stone-500 whitespace-nowrap">
+                                    {lAt ? new Date(lAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-mono text-[11px] text-stone-500 whitespace-nowrap">
+                                    {lExp ? new Date(lExp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
+                                  </td>
+                                  <td className="py-2.5 px-3 whitespace-nowrap">
+                                    <span
+                                      className={`inline-flex items-center gap-1 font-mono font-bold px-2.5 py-0.5 rounded-full text-xs ${
+                                        remainingSec <= 60
+                                          ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
+                                          : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                      }`}
+                                    >
+                                      <Clock className="w-3 h-3" />
+                                      {timeFormatted} शेष
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleForceReleaseLock(lId, kId)}
+                                      className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1 ml-auto"
+                                      title="इस लॉक को तत्काल हटाकर कुंड को मुक्त करें"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>अनलॉक / मुक्त करें</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {adminTab === 'bookings' && (
                 <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                    <div className="relative max-w-sm w-full">
-                      <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        placeholder="नाम, मोबाइल, टोकन या UTR खोजें..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full text-xs pl-9 pr-3 py-2.5 border border-stone-300 rounded-xl bg-white shadow-2xs"
-                      />
+                  <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
+                      <div className="relative flex-1">
+                        <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          placeholder={
+                            searchFilterType === 'mobile'
+                              ? 'मोबाइल नंबर द्वारा खोजें (उदा. 9876543210)...'
+                              : searchFilterType === 'token'
+                              ? 'टोकन नंबर द्वारा खोजें (उदा. BUM-2026-XXXX)...'
+                              : searchFilterType === 'kund'
+                              ? 'हवन कुंड संख्या दर्ज करें (उदा. 25)...'
+                              : 'नाम, मोबाइल, टोकन, कुंड या UTR खोजें...'
+                          }
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full text-xs pl-9 pr-3 py-2.5 border border-stone-300 rounded-xl bg-white shadow-2xs"
+                        />
+                      </div>
+
+                      {/* Filter by field type */}
+                      <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl border border-stone-300 text-xs shrink-0 overflow-x-auto">
+                        <button
+                          type="button"
+                          onClick={() => setSearchFilterType('all')}
+                          className={`px-2 py-1 rounded-lg font-bold cursor-pointer transition-all whitespace-nowrap ${
+                            searchFilterType === 'all'
+                              ? 'bg-[#8a1523] text-white shadow-2xs'
+                              : 'text-stone-700 hover:bg-stone-200'
+                          }`}
+                        >
+                          सभी
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSearchFilterType('mobile')}
+                          className={`px-2 py-1 rounded-lg font-bold cursor-pointer transition-all whitespace-nowrap ${
+                            searchFilterType === 'mobile'
+                              ? 'bg-[#8a1523] text-white shadow-2xs'
+                              : 'text-stone-700 hover:bg-stone-200'
+                          }`}
+                        >
+                          📱 मोबाइल
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSearchFilterType('token')}
+                          className={`px-2 py-1 rounded-lg font-bold cursor-pointer transition-all whitespace-nowrap ${
+                            searchFilterType === 'token'
+                              ? 'bg-[#8a1523] text-white shadow-2xs'
+                              : 'text-stone-700 hover:bg-stone-200'
+                          }`}
+                        >
+                          🎫 टोकन
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSearchFilterType('kund')}
+                          className={`px-2 py-1 rounded-lg font-bold cursor-pointer transition-all whitespace-nowrap ${
+                            searchFilterType === 'kund'
+                              ? 'bg-[#8a1523] text-white shadow-2xs'
+                              : 'text-stone-700 hover:bg-stone-200'
+                          }`}
+                        >
+                          🔥 कुंड सं.
+                        </button>
+                      </div>
+
+                      {/* Payment Status Dropdown */}
+                      <select
+                        value={searchStatusFilter}
+                        onChange={(e) => setSearchStatusFilter(e.target.value)}
+                        className="text-xs px-3 py-2 border border-stone-300 rounded-xl bg-white font-semibold text-stone-700 shrink-0"
+                        title="भुगतान/पंजीकरण स्थिति अनुसार छांटें"
+                      >
+                        <option value="all">सभी स्थितियां (All Status)</option>
+                        <option value="paid">✓ Payment Verified (स्वीकृत)</option>
+                        <option value="pending">⏳ Pending Verification (लंबित)</option>
+                        <option value="rejected">✕ Payment Rejected (अस्वीकृत)</option>
+                        <option value="counter_pay">🏛️ Counter Pay (काउंटर भुगतान)</option>
+                      </select>
                     </div>
 
                     <button
                       type="button"
                       onClick={() => exportDatabaseToCSV(registrations)}
-                      className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs cursor-pointer"
+                      className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs cursor-pointer shrink-0"
                       title="स्प्रेडशीट हेतु CSV प्रारूप में डाउनलोड करें"
                     >
                       <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-                      <span>डेटाबेस CSV निर्यात (Excel / Spreadsheet)</span>
+                      <span>डेटाबेस CSV निर्यात</span>
                     </button>
                   </div>
 

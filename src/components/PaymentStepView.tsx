@@ -41,6 +41,38 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
   const [activeReg, setActiveReg] = useState<Registration | null>(pendingReg);
   const [zoomQr, setZoomQr] = useState(false);
 
+  // 5-minute temporary lock countdown timer
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(() => {
+    if (!pendingReg?.expiresAt) return 300;
+    const diff = Math.floor((new Date(pendingReg.expiresAt).getTime() - Date.now()) / 1000);
+    return Math.max(0, Math.min(diff, 300));
+  });
+  const [isLockExpired, setIsLockExpired] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!activeReg || activeReg.paymentStatus !== 'temp_hold') return;
+
+    const interval = setInterval(() => {
+      if (!activeReg.expiresAt) return;
+      const diff = Math.floor((new Date(activeReg.expiresAt).getTime() - Date.now()) / 1000);
+      if (diff <= 0) {
+        setRemainingSeconds(0);
+        setIsLockExpired(true);
+        clearInterval(interval);
+      } else {
+        setRemainingSeconds(diff);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeReg]);
+
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   useEffect(() => {
     if (pendingReg) {
       const liveMatch = allRegistrations.find((r) => r.token === pendingReg.token);
@@ -467,7 +499,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
             <div className="inline-flex flex-wrap items-center gap-1 text-[10px] min-[360px]:text-[11px] font-bold text-[#8a1523] bg-amber-100 px-2.5 py-1 rounded-xl mb-1 border border-amber-300 max-w-full">
               <span>यज्ञ तिथि: {activeReg?.date}</span>
               <span>•</span>
-              <span>समय: 9:00 AM नियत</span>
+              <span>समय: प्रातः 09:30 AM</span>
               <span>•</span>
               <span>{kundCount} हवन कुंड ({kundFormatted})</span>
             </div>
@@ -487,6 +519,90 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
               ({kundCount} हवन कुंड • सहयोग दक्षिणा)
             </span>
           </div>
+        </div>
+
+        {/* 5-MINUTE REAL-TIME LOCK COUNTDOWN BANNER */}
+        <div
+          className={`p-3.5 sm:p-4 rounded-2xl border-2 mb-5 transition-all shadow-xs ${
+            isLockExpired
+              ? 'bg-rose-50 border-rose-400 text-rose-950'
+              : remainingSeconds <= 60
+              ? 'bg-amber-100 border-amber-500 text-amber-950 animate-pulse'
+              : 'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-300 text-stone-900'
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center font-black shrink-0 ${
+                  isLockExpired ? 'bg-rose-200 text-rose-800' : 'bg-amber-200 text-amber-900'
+                }`}
+              >
+                {isLockExpired ? '⏱️' : '🔒'}
+              </div>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                  <span>रियल-टाइम कुंड आरक्षण लॉक (5-Minute Lock)</span>
+                  {!isLockExpired && (
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold border border-emerald-300">
+                      सक्रिय
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs sm:text-sm font-semibold mt-0.5">
+                  {isLockExpired ? (
+                    <span className="text-rose-700 font-bold">
+                      समय समाप्त! 5 मिनट पूर्ण होने पर यह हवन कुंड स्वतः अनलॉक हो गया है।
+                    </span>
+                  ) : (
+                    <span>
+                      हवन कुंड <strong className="text-[#8a1523]">{kundFormatted}</strong> आपके लिए 5 मिनट हेतु सुरक्षित लॉक है।
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="text-left sm:text-right bg-white px-3.5 py-1.5 rounded-xl border border-stone-200 shadow-2xs shrink-0 self-start sm:self-auto">
+              <div className="text-[10px] font-bold text-stone-500 uppercase">शेष समय (Time Left)</div>
+              <div
+                className={`font-mono text-xl sm:text-2xl font-black ${
+                  isLockExpired
+                    ? 'text-rose-600'
+                    : remainingSeconds <= 60
+                    ? 'text-rose-600 animate-pulse'
+                    : 'text-[#872e18]'
+                }`}
+              >
+                {formatTime(remainingSeconds)}
+              </div>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          {!isLockExpired && (
+            <div className="w-full bg-stone-200 h-1.5 rounded-full mt-3 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-amber-500 to-[#8a1523] h-full transition-all duration-1000 ease-linear rounded-full"
+                style={{ width: `${Math.min(100, Math.max(0, (remainingSeconds / 300) * 100))}%` }}
+              />
+            </div>
+          )}
+
+          {isLockExpired && (
+            <div className="mt-3 pt-3 border-t border-rose-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+              <span className="text-rose-800 font-medium">
+                अन्य यजमान अब इस कुंड को बुक कर सकते हैं। कृपया पुनः अपना कुंड चुनें।
+              </span>
+              <button
+                type="button"
+                onClick={onGoBooking}
+                className="px-4 py-1.5 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-lg cursor-pointer"
+              >
+                पुनः हवन कुंड चुनें
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 items-start">

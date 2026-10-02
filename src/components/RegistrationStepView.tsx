@@ -9,8 +9,10 @@ import {
   Flame,
   ChevronRight,
   Clock,
+  Lock,
+  Loader2,
 } from 'lucide-react';
-import { DevoteeUser, Registration, KundSummary } from '../types/yagya';
+import { DevoteeUser, Registration, KundSummary, KundLiveItem } from '../types/yagya';
 import {
   YAGYA_DATES,
   YAGYA_TIME,
@@ -65,6 +67,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
     initialKund && initialKund > RESERVED_KUNDS_COUNT ? initialKund : 10,
   ]);
   const [formError, setFormError] = useState('');
+  const [isLocking, setIsLocking] = useState(false);
+
+  // Real-time server live status for all 108 Kunds
+  const [liveKunds, setLiveKunds] = useState<KundLiveItem[]>([]);
 
   // Multiple Dakshina Options (Not fixed: 2100, 5100, 100000, and Custom)
   const [selectedDakshina, setSelectedDakshina] = useState<number>(2100);
@@ -74,6 +80,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
   const finalDakshinaAmount = isCustomDakshina
     ? (Number(customAmountText) > 0 ? Number(customAmountText) : 2100)
     : selectedDakshina;
+  const totalAmount = finalDakshinaAmount;
 
   useEffect(() => {
     if (currentUser) {
@@ -95,13 +102,31 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
     setSelectedKunds([kundNum]);
   };
 
-  const totalAmount = finalDakshinaAmount;
+  const cleanMob = mobile.replace(/\D/g, '').slice(-10);
+
+  const fetchKundStatus = async () => {
+    try {
+      const mobParam = cleanMob.length === 10 ? `&mobile=${cleanMob}` : '';
+      const res = await fetch(`/api/kunds/status?date=${date}${mobParam}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.kunds)) {
+          setLiveKunds(data.kunds);
+        }
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchKundStatus();
+    const interval = setInterval(fetchKundStatus, 3000);
+    return () => clearInterval(interval);
+  }, [date, cleanMob]);
 
   const handleQuickLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
     setAuthSuccess('');
-    const cleanMob = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMob.length !== 10) {
       setAuthError('कृपया वैध 10 अंकों का मोबाइल नंबर दर्ज करें।');
       return;
@@ -123,7 +148,7 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
     setAuthSuccess('✓ साधक खाता सफलतापूर्वक प्रमाणित हो गया!');
   };
 
-  const handleSubmitBooking = (e: React.FormEvent) => {
+  const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
@@ -131,20 +156,8 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
       setFormError('कृपया मुख्य यजमान का पूरा नाम दर्ज करें।');
       return;
     }
-    const cleanMob = mobile.replace(/\D/g, '').slice(-10);
     if (cleanMob.length !== 10) {
       setFormError('कृपया वैध 10 अंकों का मोबाइल नंबर दर्ज करें।');
-      return;
-    }
-
-    // Requirement: One user can book only one kund from one registered number
-    const existingActiveBooking = registrations.find(
-      (r) => r.mobile === cleanMob && r.paymentStatus !== 'rejected' && r.paymentStatus !== 'expired'
-    );
-    if (existingActiveBooking) {
-      setFormError(
-        `एक पंजीकृत मोबाइल नंबर से केवल एक ही हवन कुंड बुक किया जा सकता है। आपके मोबाइल नंबर (+91 ${cleanMob}) से पहले ही हवन कुंड #${String(existingActiveBooking.kundNumber).padStart(3, '0')} आरक्षित है (टोकन: ${existingActiveBooking.token})।`
-      );
       return;
     }
 
@@ -153,83 +166,115 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
       return;
     }
 
-    let devoteeRecord = currentUser;
-    if (!currentUser) {
-      if (!accountPassword || accountPassword.length < 4) {
-        setFormError('कृपया कम से कम 4 अक्षरों का पासवर्ड बनाएं ताकि आप अगली बार लॉगिन करके अपनी रसीद व पास प्राप्त कर सकें।');
-        return;
-      }
-      const existing = devotees.find((d) => d.mobile === cleanMob);
-      if (existing) {
-        if (existing.password === accountPassword) {
-          devoteeRecord = existing;
-          setCurrentUser(existing);
-          localStorage.setItem('yagya_devotee_user', JSON.stringify(existing));
-        } else {
-          setFormError('यह मोबाइल पहले से पंजीकृत है। कृपया लॉगिन करें अथवा सही पासवर्ड दर्ज करें।');
-          return;
-        }
-      } else {
-        devoteeRecord = {
-          id: `dev-${Date.now()}`,
-          fullName: fullName.trim(),
-          mobile: cleanMob,
-          password: accountPassword,
-          city: city.trim(),
-          gotra: gotra.trim(),
-          email: email.trim(),
-        };
-        setDevotees((prev) => [...prev, devoteeRecord!]);
-        setCurrentUser(devoteeRecord);
-        localStorage.setItem('yagya_devotee_user', JSON.stringify(devoteeRecord));
-      }
-    }
-
     if (selectedKunds.length === 0) {
       setFormError('कृपया 10 से 108 में से किसी उपलब्ध हवन कुंड का चयन करें।');
       return;
     }
 
     const primaryKund = selectedKunds[0];
-    const randHex = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const token = `MUMY-26-K${String(primaryKund).padStart(2, '0')}-${cleanMob.slice(-2)}${randHex}`;
-    const id = `reg-${Date.now()}-${randHex}`;
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    setIsLocking(true);
 
-    const tempRegistration: Registration = {
-      id,
-      token,
-      userId: devoteeRecord?.id,
-      fullName: fullName.trim(),
-      husbandName: fullName.trim(),
-      wifeName: wifeName.trim() || undefined,
-      mobile: cleanMob,
-      email: email.trim() || undefined,
-      city: city.trim(),
-      gotra: gotra.trim() || undefined,
-      kundNumber: primaryKund,
-      kundNumbers: [primaryKund],
-      kundCount: 1,
-      date,
-      timeSlot: '9:30 AM (प्रातः 09:30 AM)',
-      participationType,
-      personCount: wifeName.trim() ? 2 : 1,
-      amount: totalAmount,
-      paymentStatus: 'temp_hold',
-      expiresAt,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Trigger backend server API so it reserves the temporary hold immediately
+    // Backend Lock Call: Enforces 1 Kund per day and concurrent lock
     try {
+      const lockRes = await fetch('/api/kunds/lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kundNumber: primaryKund,
+          date,
+          mobile: cleanMob,
+          fullName: fullName.trim(),
+          amount: totalAmount,
+        }),
+      });
+
+      const lockData = await lockRes.json();
+      if (!lockRes.ok) {
+        setFormError(
+          lockData.error ||
+            'इस मोबाइल नंबर से इस दिन पहले ही एक कुंड पंजीकृत है। एक मोबाइल नंबर से एक दिन में केवल एक कुंड का पंजीकरण किया जा सकता है।'
+        );
+        fetchKundStatus();
+        setIsLocking(false);
+        return;
+      }
+
+      let devoteeRecord = currentUser;
+      if (!currentUser) {
+        if (!accountPassword || accountPassword.length < 4) {
+          setFormError('कृपया कम से कम 4 अक्षरों का पासवर्ड बनाएं ताकि आप अगली बार लॉगिन करके अपनी रसीद व पास प्राप्त कर सकें।');
+          setIsLocking(false);
+          return;
+        }
+        const existing = devotees.find((d) => d.mobile === cleanMob);
+        if (existing) {
+          if (existing.password === accountPassword) {
+            devoteeRecord = existing;
+            setCurrentUser(existing);
+            localStorage.setItem('yagya_devotee_user', JSON.stringify(existing));
+          } else {
+            setFormError('यह मोबाइल पहले से पंजीकृत है। कृपया लॉगिन करें अथवा सही पासवर्ड दर्ज करें।');
+            setIsLocking(false);
+            return;
+          }
+        } else {
+          devoteeRecord = {
+            id: `dev-${Date.now()}`,
+            fullName: fullName.trim(),
+            mobile: cleanMob,
+            password: accountPassword,
+            city: city.trim(),
+            gotra: gotra.trim(),
+            email: email.trim(),
+          };
+          setDevotees((prev) => [...prev, devoteeRecord!]);
+          setCurrentUser(devoteeRecord);
+          localStorage.setItem('yagya_devotee_user', JSON.stringify(devoteeRecord));
+        }
+      }
+
+      const randHex = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const token = `MUMY-26-K${String(primaryKund).padStart(2, '0')}-${cleanMob.slice(-2)}${randHex}`;
+      const id = `reg-${Date.now()}-${randHex}`;
+      const expiresAt = lockData.lock?.lockExpiresAt || new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+      const tempRegistration: Registration = {
+        id,
+        token,
+        userId: devoteeRecord?.id,
+        fullName: fullName.trim(),
+        husbandName: fullName.trim(),
+        wifeName: wifeName.trim() || undefined,
+        mobile: cleanMob,
+        email: email.trim() || undefined,
+        city: city.trim(),
+        gotra: gotra.trim() || undefined,
+        kundNumber: primaryKund,
+        kundNumbers: [primaryKund],
+        kundCount: 1,
+        date,
+        timeSlot: '9:30 AM (प्रातः 09:30 AM)',
+        participationType,
+        personCount: wifeName.trim() ? 2 : 1,
+        amount: totalAmount,
+        paymentStatus: 'temp_hold',
+        expiresAt,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Background temp-hold sync
       fetch('/api/reservations/temp-hold', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(tempRegistration),
-      }).catch((e) => console.warn('Background temp-hold warning:', e));
-    } catch (e) {}
+      }).catch((e) => console.warn('Background temp-hold note:', e));
 
-    onProceedToPayment(tempRegistration);
+      setIsLocking(false);
+      onProceedToPayment(tempRegistration);
+    } catch (err: any) {
+      setFormError(err.message || 'नेटवर्क त्रुटि: कृपया पुनः प्रयास करें।');
+      setIsLocking(false);
+    }
   };
 
   return (
@@ -614,36 +659,72 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
 
             <div className="bg-[#faf5eb] p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-amber-200">
               <div className="grid grid-cols-4 min-[360px]:grid-cols-5 min-[420px]:grid-cols-6 sm:grid-cols-10 md:grid-cols-12 gap-1.5 sm:gap-2 max-h-56 overflow-y-auto p-1">
-                {kundSummary.list.map((k) => {
-                  const isReservedSant = k.isReserved;
+                {(liveKunds.length > 0
+                  ? liveKunds
+                  : kundSummary.list.map((k) => ({
+                      kundNumber: k.kundNumber,
+                      formattedNumber: k.formattedNumber,
+                      status: k.isReserved
+                        ? ('RESERVED' as const)
+                        : k.bookedCount > 0
+                        ? ('BOOKED' as const)
+                        : ('AVAILABLE' as const),
+                      isSantReserved: k.isReserved,
+                    }))
+                ).map((k) => {
+                  const isSant = k.status === 'RESERVED';
+                  const isBooked = k.status === 'BOOKED';
+                  const isLocked = k.status === 'LOCKED';
+                  const isLockedSelf = Boolean((k as any).isLockedBySelf);
                   const isSelected = selectedKunds.includes(k.kundNumber);
-                  const isFull = !isReservedSant && k.bookedCount >= 2;
+
+                  let disabled = false;
+                  let cardStyle = 'bg-white hover:bg-amber-100 text-stone-800 border border-stone-300';
+                  let statusText = 'मुक्त';
+
+                  if (isSant) {
+                    disabled = true;
+                    cardStyle = 'bg-stone-200 text-stone-400 border border-stone-300 cursor-not-allowed';
+                    statusText = 'संत';
+                  } else if (isBooked) {
+                    disabled = true;
+                    cardStyle = 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed';
+                    statusText = 'आरक्षित';
+                  } else if (isLocked && !isLockedSelf) {
+                    disabled = true;
+                    cardStyle =
+                      'bg-amber-100 text-amber-900 border-2 border-dashed border-amber-400 cursor-not-allowed animate-pulse';
+                    statusText = '🔒 लॉक्ड';
+                  } else if (isSelected) {
+                    cardStyle = 'bg-[#8a1523] text-white shadow-md scale-105 border-2 border-amber-400 font-black';
+                    statusText = '✓ चयनित';
+                  } else if (isLockedSelf) {
+                    cardStyle = 'bg-amber-50 text-amber-950 border-2 border-amber-500 font-bold';
+                    statusText = 'आपका लॉक';
+                  }
 
                   return (
                     <button
                       key={k.kundNumber}
                       type="button"
-                      disabled={isReservedSant || isFull}
+                      disabled={disabled}
                       onClick={() => handleSelectKund(k.kundNumber)}
-                      className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
-                        isReservedSant
-                          ? 'bg-stone-200 text-stone-400 border border-stone-300 cursor-not-allowed'
-                          : isFull
-                          ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed'
-                          : isSelected
-                          ? 'bg-[#8a1523] text-white shadow-md scale-105 border-2 border-amber-400 font-black'
-                          : 'bg-white hover:bg-amber-100 text-stone-800 border border-stone-300'
-                      }`}
+                      className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${cardStyle}`}
                       title={
-                        isReservedSant
+                        isSant
                           ? 'संतों व आचार्यों हेतु आरक्षित'
-                          : isFull
-                          ? 'यह कुंड पूर्ण है'
+                          : isBooked
+                          ? 'यह कुंड आरक्षित है'
+                          : isLocked && !isLockedSelf
+                          ? 'यह कुंड 5 मिनट के लिए अस्थायी लॉक्ड है'
                           : `हवन कुंड #${k.formattedNumber} चुनें`
                       }
                     >
                       <span className="text-[9px] opacity-70">#</span>
                       <span className="text-xs font-black">{k.formattedNumber}</span>
+                      <span className="text-[8px] mt-0.5 font-bold truncate max-w-full">
+                        {statusText}
+                      </span>
                     </button>
                   );
                 })}
@@ -675,16 +756,27 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                 ₹ {totalAmount.toLocaleString('en-IN')}
               </span>
               <span className="text-xs font-bold text-stone-600 ml-2">
-                (1 हवन कुंड • एकल यजमान आरक्षण)
+                (1 हवन कुंड • एकल यजमान आरक्षण • 5 मिनट सुरक्षित लॉक)
               </span>
             </div>
 
             <button
               type="submit"
-              className="w-full sm:w-auto px-6 sm:px-7 py-3.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+              disabled={isLocking}
+              className="w-full sm:w-auto px-6 sm:px-7 py-3.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
             >
-              <span>अस्थायी आरक्षण करें व दक्षिणा जमा करें</span>
-              <ChevronRight className="w-4 h-4 text-white shrink-0" />
+              {isLocking ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>हवन कुंड लॉक हो रहा है...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4 text-amber-300 shrink-0" />
+                  <span>हवन कुंड लॉक करें व दक्षिणा जमा करें (5m)</span>
+                  <ChevronRight className="w-4 h-4 text-white shrink-0" />
+                </>
+              )}
             </button>
           </div>
         </form>

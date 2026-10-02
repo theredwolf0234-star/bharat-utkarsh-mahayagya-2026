@@ -23,10 +23,20 @@ import {
   getDevoteeUserByMobile,
   getDevoteeUserById,
   getDevoteePrivateTickets,
+  cleanupExpiredLocks,
+  checkMobileBookingRestriction,
+  getKundDetailedStatus,
+  createOrRenewKundLock,
+  releaseKundLock,
+  releaseLockById,
+  convertLockToConfirmed,
+  getAllActiveKundLocks,
+  getRealTimeKundsForDate,
   DbRegistration,
   DbAuditLog,
   DbSystemSettings,
   DbDevoteeUser,
+  DbKundLock,
 } from './src/server/database';
 
 dotenv.config();
@@ -204,43 +214,159 @@ function generatePaymentSignature(token: string, utr: string, amount: number): s
 }
 
 /**
- * Check if a Kund is available (anti-double booking logic)
+ * Concurrency Mutex: Prevents race conditions during simultaneous booking & locking attempts
  */
-function isKundSlotAvailable(kundNumber: number, date: string, excludeId?: string): { available: boolean; reason?: string } {
-  if (kundNumber < 10 || kundNumber > 108) {
-    return { available: false, reason: 'कुंड संख्या 1 से 9 संतों हेतु आरक्षित हैं। कृपया 10 से 108 में से चुनें।' };
+class AsyncMutex {
+  private queue: (() => void)[] = [];
+  private locked = false;
+
+  async acquire(): Promise<() => void> {
+    return new Promise((resolve) => {
+      const release = () => {
+        if (this.queue.length > 0) {
+          const next = this.queue.shift()!;
+          next();
+        } else {
+          this.locked = false;
+        }
+      };
+
+      if (this.locked) {
+        this.queue.push(() => resolve(release));
+      } else {
+        this.locked = true;
+        resolve(release);
+      }
+    });
   }
+}
+const bookingMutex = new AsyncMutex();
 
-  const now = Date.now();
-  const allBookings = Array.from(registrationsStore.values());
+/**
+ * Check if a Kund is available (Strict anti-double booking and real-time locking)
+ */
+function isKundSlotAvailable(
+  kundNumber: number,
+  date: string,
+  excludeId?: string,
+  requestingMobile?: string
+): { available: boolean; status?: string; reason?: string; remainingSeconds?: number } {
+  const result = getKundDetailedStatus(kundNumber, date, requestingMobile);
+  return {
+    available: result.available,
+    status: result.status,
+    reason: result.reason,
+    remainingSeconds: result.remainingSeconds,
+  };
+}
 
-  const activeOnKund = allBookings.filter((b) => {
-    if (excludeId && b.id === excludeId) return false;
-    if (b.kundNumber !== kundNumber || b.date !== date) return false;
+// -------------------------------------------------------------
+// Real-time Kund Booking & 5-Minute Locking System API
+// -------------------------------------------------------------
 
-    // Paid / counter_pay is permanent booking
-    if (b.paymentStatus === 'paid' || b.paymentStatus === 'counter_pay') return true;
+// 1. Get Live Status of all 108 Kunds for a specific date (AVAILABLE / LOCKED / BOOKED / RESERVED)
+app.get('/api/kunds/status', (req: Request, res: Response) => {
+  const { date = '2026-11-27', mobile } = req.query;
+  const result = getRealTimeKundsForDate(String(date), mobile ? String(mobile) : undefined);
+  res.json(result);
+});
 
-    // Pending / temp_hold is active IF hold timer has not expired
-    if (b.paymentStatus === 'pending' || b.paymentStatus === 'temp_hold') {
-      if (!b.expiresAt) return true;
-      const exp = new Date(b.expiresAt).getTime();
-      return exp > now;
+// 2. Temporarily Lock a Kund (5-minute countdown)
+app.post('/api/kunds/lock', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
+  try {
+    const { kundNumber, date, mobile, fullName, amount } = req.body;
+    if (!kundNumber || !date || !mobile) {
+      return res.status(400).json({ error: 'कुंड संख्या, यज्ञ तिथि एवं मोबाइल नंबर अनिवार्य हैं।' });
     }
 
-    return false;
-  });
+    const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) {
+      return res.status(400).json({ error: 'कृपया 10 अंकों का वैध मोबाइल नंबर दर्ज करें।' });
+    }
 
-  // Max 2 bookings (1 couple or 2 individual devotees)
-  if (activeOnKund.length >= 2) {
-    return {
-      available: false,
-      reason: `हवन कुंड सं. #${kundNumber} इस तिथि (${date}) पर पहले से ही पूर्ण आरक्षित है। कृपया कोई अन्य रिक्त कुंड चुनें।`,
+    const kNum = Number(kundNumber);
+    if (kNum < 10 || kNum > 108) {
+      return res.status(400).json({ error: 'कुंड 1 से 9 पूज्य संतों हेतु आरक्षित हैं। कृपया 10 से 108 में से चुनें।' });
+    }
+
+    const settings = getSystemSettingsFromDb();
+    const expiryMinutes = settings.reservationExpiryMinutes || 5; // Default 5 mins lock
+    const nowIso = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
+    const lockId = `lock-${kNum}-${cleanMobile.slice(-4)}-${Date.now()}`;
+
+    const lockData: DbKundLock = {
+      lock_id: lockId,
+      kund_id: kNum,
+      booking_date: String(date),
+      mobile_number: cleanMobile,
+      user_name: fullName ? String(fullName).trim() : 'यजमान',
+      amount: Number(amount) || 2100,
+      locked_at: nowIso,
+      lock_expires_at: expiresAt,
+      status: 'LOCKED',
     };
-  }
 
-  return { available: true };
-}
+    const lockResult = createOrRenewKundLock(lockData);
+    if (!lockResult.success) {
+      const isDailyLimit = lockResult.error?.includes('इस दिन पहले ही एक कुंड पंजीकृत है');
+      const statusCode = isDailyLimit ? 400 : 409;
+      return res.status(statusCode).json({
+        error: lockResult.error,
+        code: isDailyLimit ? 'DAILY_LIMIT_EXCEEDED' : 'KUND_UNAVAILABLE',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      lock: {
+        lockId,
+        kundNumber: kNum,
+        date: String(date),
+        mobile: cleanMobile,
+        lockedAt: nowIso,
+        lockExpiresAt: expiresAt,
+        remainingSeconds: lockResult.remainingSeconds || expiryMinutes * 60,
+      },
+      message: `हवन कुंड #${String(kNum).padStart(3, '0')} आपके लिए ${expiryMinutes} मिनट हेतु सुरक्षित लॉक कर दिया गया है।`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'कुंड लॉक करने में त्रुटि।' });
+  } finally {
+    release();
+  }
+});
+
+// 3. Release Lock (Devotee cancels, navigates away, or changes Kund)
+app.post('/api/kunds/release-lock', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
+  try {
+    const { lockId, kundNumber, date, mobile } = req.body;
+    if (lockId) {
+      releaseLockById(String(lockId));
+    } else if (kundNumber && date) {
+      const cleanMobile = mobile ? String(mobile).replace(/\D/g, '').slice(-10) : undefined;
+      releaseKundLock(Number(kundNumber), String(date), cleanMobile);
+    }
+    return res.json({ success: true, message: 'कुंड लॉक मुक्त कर दिया गया।' });
+  } finally {
+    release();
+  }
+});
+
+// 4. Admin: View All Active Locks
+app.get('/api/admin/locks', requireAdmin, (req: Request, res: Response) => {
+  const locks = getAllActiveKundLocks();
+  res.json({ locks });
+});
+
+// 5. Admin: Force Release Lock
+app.post('/api/admin/locks/:id/release', requireAdmin, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  releaseLockById(id);
+  res.json({ success: true, message: `लॉक #${id} को व्यवस्थापक द्वारा मुक्त किया गया।` });
+});
 
 // -------------------------------------------------------------
 // API: Health & Status
@@ -558,6 +684,7 @@ app.get('/api/registrations/lookup', (req: Request, res: Response) => {
 
 // Step 1 & 2: Initiate Temporary Reservation Hold (Prevents Double Booking)
 app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
   try {
     const {
       fullName,
@@ -582,37 +709,62 @@ app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'सभी आवश्यक यजमान विवरण भरें।' });
     }
 
+    const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) {
+      return res.status(400).json({ error: 'कृपया 10 अंकों का वैध मोबाइल नंबर दर्ज करें।' });
+    }
+
     const kNum = Number(kundNumber);
-    const availability = isKundSlotAvailable(kNum, date);
+    if (kNum < 10 || kNum > 108) {
+      return res.status(400).json({ error: 'कुंड संख्या 001 से 009 पूज्य संतों हेतु आरक्षित हैं। कृपया 10 से 108 में से चुनें।' });
+    }
+
+    // Enforce 1 Kund per day per mobile number
+    const mobileCheck = checkMobileBookingRestriction(cleanMobile, String(date));
+    if (!mobileCheck.allowed) {
+      return res.status(400).json({
+        error: mobileCheck.reason || 'इस मोबाइल नंबर से इस दिन पहले ही एक कुंड पंजीकृत है। एक मोबाइल नंबर से एक दिन में केवल एक कुंड का पंजीकरण किया जा सकता है।',
+        code: 'DAILY_LIMIT_EXCEEDED',
+      });
+    }
+
+    // Check kund availability (Strict concurrent anti-double booking)
+    const availability = getKundDetailedStatus(kNum, String(date), cleanMobile);
     if (!availability.available) {
       return res.status(409).json({ error: availability.reason || 'यह हवन कुंड इस समय उपलब्ध नहीं है।' });
     }
 
-    const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
-
-    // Enforce rule: One user can book only one kund from one registered number
-    const allBookings = Array.from(registrationsStore.values());
-    const existingActiveBooking = allBookings.find(
-      (b: StoredRegistration) =>
-        b.mobile === cleanMobile &&
-        b.paymentStatus !== 'rejected' &&
-        b.paymentStatus !== 'expired'
-    );
-    if (existingActiveBooking) {
-      return res.status(400).json({
-        error: `इस पंजीकृत मोबाइल नंबर (+91 ${cleanMobile}) से पहले ही कुंड #${String(existingActiveBooking.kundNumber).padStart(3, '0')} आरक्षित/बुक है। नियम अनुसार एक मोबाइल नंबर से केवल एक ही कुंड बुक किया जा सकता है।`,
-      });
-    }
-
     const count = Number(personCount) || (wifeName ? 2 : 1);
-    const resolvedKundCount = 1; // Strict: 1 kund per user
+    const resolvedKundCount = 1; // Strict: 1 booking = 1 kund
     const amount = Number(req.body.amount) || 2100; // Flexible dakshina options: 2100, 5100, 100000, etc.
 
     const settings = getSystemSettingsFromDb();
 
-    // Calculate temporary reservation expiry
-    const expiryMinutes = settings.reservationExpiryMinutes || 15;
+    // 5-minute atomic lock window
+    const expiryMinutes = settings.reservationExpiryMinutes || 5;
+    const nowIso = new Date().toISOString();
     const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
+
+    const lockId = `lock-${kNum}-${cleanMobile.slice(-4)}-${Date.now()}`;
+    const lockResult = createOrRenewKundLock({
+      lock_id: lockId,
+      kund_id: kNum,
+      booking_date: String(date),
+      mobile_number: cleanMobile,
+      user_name: primaryName,
+      amount,
+      locked_at: nowIso,
+      lock_expires_at: expiresAt,
+      status: 'LOCKED',
+    });
+
+    if (!lockResult.success) {
+      const isDailyLimit = lockResult.error?.includes('इस दिन पहले ही एक कुंड पंजीकृत है');
+      return res.status(isDailyLimit ? 400 : 409).json({
+        error: lockResult.error || 'यह हवन कुंड लॉक नहीं किया जा सका।',
+        code: isDailyLimit ? 'DAILY_LIMIT_EXCEEDED' : 'KUND_UNAVAILABLE',
+      });
+    }
 
     const randHex = crypto.randomBytes(3).toString('hex').toUpperCase();
     const token = `MUMY-26-K${String(kNum).padStart(2, '0')}-${cleanMobile.slice(-2)}${randHex}`;
@@ -634,9 +786,9 @@ app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
       city: city ? city.trim() : 'नोएडा',
       kundNumber: kNum,
       kundCount: resolvedKundCount,
-      kundNumbers: Array.isArray(kundNumbers) && kundNumbers.length > 0 ? kundNumbers : [kNum],
-      date,
-      timeSlot: timeSlot || 'प्रातः 09:00 AM',
+      kundNumbers: [kNum],
+      date: String(date),
+      timeSlot: timeSlot || 'प्रातः 09:30 AM',
       participationType: participationType || 'दंपति',
       address: address || 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304',
       gotra: gotra ? gotra.trim() : undefined,
@@ -645,7 +797,7 @@ app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
       paymentStatus: 'temp_hold',
       expiresAt,
       isTestMode: settings.testModeEnabled,
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
     };
 
     registrationsStore.set(id, tempReg);
@@ -683,12 +835,24 @@ app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
     return res.status(201).json({
       success: true,
       registration: tempReg,
+      lock: {
+        lockId,
+        kundNumber: kNum,
+        date: String(date),
+        mobile: cleanMobile,
+        lockedAt: nowIso,
+        lockExpiresAt: expiresAt,
+        remainingSeconds: lockResult.remainingSeconds || expiryMinutes * 60,
+      },
       expiresAt,
       expiryMinutes,
-      message: `कुंड संख्या #${kNum} आपके लिए ${expiryMinutes} मिनट हेतु अस्थायी रूप से आरक्षित है। कृपया UPI भुगतान कर प्रमाण जमा करें।`,
+      remainingSeconds: lockResult.remainingSeconds || expiryMinutes * 60,
+      message: `कुंड संख्या #${kNum} आपके लिए ${expiryMinutes} मिनट हेतु सुरक्षित लॉक कर दिया गया है। कृपया दक्षिणा विवरण जमा करें।`,
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'अस्थायी आरक्षण में त्रुटि।' });
+  } finally {
+    release();
   }
 });
 
@@ -698,6 +862,7 @@ app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
 // In Free TEST Mode: Instant mock approval is available.
 // -------------------------------------------------------------
 app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
   try {
     const {
       registrationId,
@@ -717,7 +882,6 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
       const src = req.body.registration || req.body;
       if (src && (src.mobile || src.fullName || src.husbandName)) {
         const primaryKund = Number(src.kundNumber) || 10;
-        const kCount = Number(src.kundCount) || 1;
         const cleanMob = String(src.mobile || '').replace(/\D/g, '').slice(-10);
         const randHex = crypto.randomBytes(3).toString('hex').toUpperCase();
         const genToken = src.token || `MUMY-26-K${String(primaryKund).padStart(2, '0')}-${cleanMob.slice(-2)}${randHex}`;
@@ -733,13 +897,13 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
           email: src.email,
           city: src.city || 'नोएडा',
           kundNumber: primaryKund,
-          kundCount: kCount,
-          kundNumbers: Array.isArray(src.kundNumbers) && src.kundNumbers.length > 0 ? src.kundNumbers : [primaryKund],
+          kundCount: 1,
+          kundNumbers: [primaryKund],
           date: src.date || '2026-11-27',
-          timeSlot: src.timeSlot || '9:00 AM (प्रातः 09:00 AM)',
+          timeSlot: src.timeSlot || 'प्रातः 09:30 AM',
           address: src.address || 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304',
           gotra: src.gotra,
-          personCount: src.personCount || (kCount * 2),
+          personCount: src.personCount || 2,
           amount: Number(src.amount) || 2100,
           paymentStatus: 'pending',
           createdAt: src.createdAt || new Date().toISOString(),
@@ -748,6 +912,15 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
       } else {
         return res.status(404).json({ error: 'आरक्षण रिकॉर्ड नहीं मिला। कृपया पुनः प्रयास करें।' });
       }
+    }
+
+    // Backend & Database Check: Only 1 confirmed Kund per mobile number per day
+    const restriction = checkMobileBookingRestriction(reg.mobile, reg.date);
+    if (!restriction.allowed && restriction.existingToken !== reg.token) {
+      return res.status(400).json({
+        error: restriction.reason || 'इस मोबाइल नंबर से इस दिन पहले ही एक कुंड पंजीकृत है। एक मोबाइल नंबर से एक दिन में केवल एक कुंड का पंजीकरण किया जा सकता है।',
+        code: 'DAILY_LIMIT_EXCEEDED',
+      });
     }
 
     const authDevotee = getAuthenticatedDevotee(req);
@@ -768,6 +941,7 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
       registrationsStore.set(reg.id, reg);
       saveToDisk();
       insertOrUpdateRegistration(reg as DbRegistration);
+      convertLockToConfirmed(reg.kundNumber, reg.date, reg.mobile);
 
       insertAuditLog({
         id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -804,6 +978,7 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
       registrationsStore.set(reg.id, reg);
       saveToDisk();
       insertOrUpdateRegistration(reg as DbRegistration);
+      convertLockToConfirmed(reg.kundNumber, reg.date, reg.mobile);
 
       insertAuditLog({
         id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -841,7 +1016,6 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
     usedUtrs.add(cleanUtr);
 
     // CRITICAL: Set status to 'pending' (Awaiting Admin Verification!)
-    // Entering a 12-digit number DOES NOT approve the payment!
     reg.paymentStatus = 'pending';
     reg.utrNumber = cleanUtr;
     if (paymentProofUrl) {
@@ -856,6 +1030,7 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
     registrationsStore.set(reg.id, reg);
     saveToDisk();
     insertOrUpdateRegistration(reg as DbRegistration);
+    convertLockToConfirmed(reg.kundNumber, reg.date, reg.mobile);
 
     try {
       await supabase.from('registrations').upsert([
@@ -881,11 +1056,14 @@ app.post('/api/payment/submit-proof', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'भुगतान प्रमाण जमा करने में त्रुटि।' });
+  } finally {
+    release();
   }
 });
 
 // Legacy backward-compatibility endpoint that redirects to submit-proof
 app.post('/api/payment/verify-and-generate-token', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
   try {
     const {
       fullName,
@@ -913,9 +1091,18 @@ app.post('/api/payment/verify-and-generate-token', async (req: Request, res: Res
     const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
     const kNum = Number(kundNumber);
     const count = Number(personCount) || 2;
-    const resolvedKundCount = Number(kundCount) || (Array.isArray(kundNumbers) && kundNumbers.length > 0 ? kundNumbers.length : 1);
-    const amount = resolvedKundCount * 1100; // Requirement: ₹1,100 per Kund
+    const resolvedKundCount = 1;
+    const amount = Number(req.body.amount) || 2100;
     const settings = getSystemSettingsFromDb();
+
+    // Check daily booking limit
+    const restriction = checkMobileBookingRestriction(cleanMobile, String(date));
+    if (!restriction.allowed) {
+      return res.status(400).json({
+        error: restriction.reason || 'इस मोबाइल नंबर से इस दिन पहले ही एक कुंड पंजीकृत है। एक मोबाइल नंबर से एक दिन में केवल एक कुंड का पंजीकरण किया जा सकता है।',
+        code: 'DAILY_LIMIT_EXCEEDED',
+      });
+    }
 
     // Check availability
     const avail = isKundSlotAvailable(kNum, date);
@@ -966,9 +1153,9 @@ app.post('/api/payment/verify-and-generate-token', async (req: Request, res: Res
       city: city ? city.trim() : 'नोएडा',
       kundNumber: kNum,
       kundCount: resolvedKundCount,
-      kundNumbers: Array.isArray(kundNumbers) && kundNumbers.length > 0 ? kundNumbers : [kNum],
+      kundNumbers: [kNum],
       date,
-      timeSlot: timeSlot || 'प्रातः 09:00 AM',
+      timeSlot: timeSlot || 'प्रातः 09:30 AM',
       participationType: participationType || 'दंपति',
       address: address || 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304',
       gotra: gotra ? gotra.trim() : undefined,
@@ -987,6 +1174,7 @@ app.post('/api/payment/verify-and-generate-token', async (req: Request, res: Res
     registrationsStore.set(id, newReg);
     saveToDisk();
     insertOrUpdateRegistration(newReg as DbRegistration);
+    convertLockToConfirmed(kNum, String(date), cleanMobile);
 
     try {
       await supabase.from('registrations').upsert([
@@ -1034,6 +1222,8 @@ app.post('/api/payment/verify-and-generate-token', async (req: Request, res: Res
     });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'त्रुटि।' });
+  } finally {
+    release();
   }
 });
 

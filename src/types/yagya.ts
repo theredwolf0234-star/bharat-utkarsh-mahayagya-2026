@@ -195,5 +195,40 @@ export interface ParticipationTypeOption {
 }
 
 export * from '../constants/yagya';
-export const DEFAULT_ADDRESS = 'रामलीला मैदान, महर्षि आश्रम, गेट सं. 5, महर्षि नगर, सेक्टर-110, नोएडा 201304';
-export const DEFAULT_EXPIRY_MINUTES = 15;
+export const DEFAULT_ADDRESS = 'रामलीला मैदान, महर्षि आश्रम, गेट सं. 6, महर्षि नगर, सेक्टर-110, नोएडा 201304';
+export const DEFAULT_EXPIRY_MINUTES = 5;
+
+export type KundStatusType = 'AVAILABLE' | 'LOCKED' | 'BOOKED' | 'RESERVED';
+
+export interface KundLockInfo {
+  lockId: string;
+  kundId: number;
+  kundNumber: number;
+  bookingDate: string;
+  mobileNumber: string;
+  userName?: string;
+  amount?: number;
+  lockedAt: string;
+  lockExpiresAt: string;
+  status: 'LOCKED' | 'EXPIRED' | 'RELEASED' | 'CONVERTED';
+  remainingSeconds: number;
+}
+
+export interface KundLiveItem {
+  kundNumber: number;
+  formattedNumber: string;
+  status: KundStatusType;
+  isSantReserved: boolean;
+  isLockedBySelf?: boolean;
+  lockInfo?: {
+    lockId: string;
+    mobileMasked: string;
+    expiresAt: string;
+    remainingSeconds: number;
+  };
+  bookingInfo?: {
+    token: string;
+    nameMasked: string;
+    paymentStatus: PaymentStatus;
+  };
+}
