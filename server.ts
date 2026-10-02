@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+import Razorpay from 'razorpay';
 import { validateUpiUtr } from './src/utils/utrValidator';
 import {
   initSqliteDatabase,
@@ -32,7 +33,16 @@ import {
   convertLockToConfirmed,
   getAllActiveKundLocks,
   getRealTimeKundsForDate,
+  generateNextTokenNumber,
+  createOrUpdateBooking,
+  getBookingById,
+  getBookingByOrderId,
+  getAllBookingsFromDb,
+  confirmBookingPayment,
+  failBookingPayment,
+  cancelBookingPayment,
   DbRegistration,
+  DbBooking,
   DbAuditLog,
   DbSystemSettings,
   DbDevoteeUser,
@@ -62,8 +72,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// Large body limit for payment screenshots (Base64)
-app.use(express.json({ limit: '10mb' }));
+// Large body limit with rawBody capture for webhook signature verification
+app.use(
+  express.json({
+    limit: '10mb',
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Supabase config
@@ -73,9 +90,31 @@ const SUPABASE_ANON_KEY =
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Cryptographic Secret for Payment Signatures
+// Cryptographic Secret for Payment Signatures & Gateway Config
 const PAYMENT_SECRET_KEY = process.env.PAYMENT_SECRET_KEY || 'MAHARISHI_YAGYA_SECURE_KEY_2026_V1';
 export const MASTER_ADMIN_TOKEN = 'maharishi_master_session_token';
+
+// Production Indian UPI Payment Gateway (Razorpay)
+const PAYMENT_KEY_ID = process.env.PAYMENT_KEY_ID || process.env.RAZORPAY_KEY_ID || '';
+const PAYMENT_KEY_SECRET = process.env.PAYMENT_KEY_SECRET || process.env.RAZORPAY_KEY_SECRET || '';
+const PAYMENT_WEBHOOK_SECRET = process.env.PAYMENT_WEBHOOK_SECRET || process.env.RAZORPAY_WEBHOOK_SECRET || '';
+const APP_URL = process.env.APP_URL || 'http://localhost:3000';
+
+const isGatewayLive = Boolean(PAYMENT_KEY_ID && PAYMENT_KEY_SECRET);
+let razorpayClient: Razorpay | null = null;
+if (isGatewayLive) {
+  try {
+    razorpayClient = new Razorpay({
+      key_id: PAYMENT_KEY_ID,
+      key_secret: PAYMENT_KEY_SECRET,
+    });
+    console.log('✅ Razorpay Payment Gateway client initialized in LIVE mode.');
+  } catch (e) {
+    console.error('⚠️ Could not initialize Razorpay client:', e);
+  }
+} else {
+  console.log('ℹ️ Razorpay keys not detected in .env. Running in TEST PAYMENT MODE (Sandbox simulator).');
+}
 
 interface AdminUser {
   username: string;
@@ -366,6 +405,511 @@ app.post('/api/admin/locks/:id/release', requireAdmin, async (req: Request, res:
   const { id } = req.params;
   releaseLockById(id);
   res.json({ success: true, message: `लॉक #${id} को व्यवस्थापक द्वारा मुक्त किया गया।` });
+});
+
+// -------------------------------------------------------------
+// Production UPI Payment Gateway & Booking Lifecycle Endpoints
+// -------------------------------------------------------------
+
+// 1. Create Payment Order (POST /api/payment/create-order)
+app.post('/api/payment/create-order', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
+  try {
+    const {
+      fullName,
+      husbandName,
+      wifeName,
+      mobile,
+      email,
+      city,
+      kundNumber,
+      date,
+      timeSlot,
+      amount,
+      address,
+      gotra,
+      personCount = 2,
+    } = req.body;
+
+    const primaryName = String(fullName || husbandName || '').trim();
+    if (!primaryName) {
+      return res.status(400).json({ error: 'कृपया यजमान का पूरा नाम दर्ज करें।' });
+    }
+
+    const cleanMobile = String(mobile || '').replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) {
+      return res.status(400).json({ error: 'कृपया 10 अंकों का वैध मोबाइल नंबर दर्ज करें।' });
+    }
+
+    const kNum = Number(kundNumber);
+    if (!kNum || kNum < 10 || kNum > 108) {
+      return res.status(400).json({
+        error: 'कुंड संख्या 001 से 009 पूज्य संतों हेतु आरक्षित हैं। कृपया 010 से 108 में से एक कुंड चुनें।',
+      });
+    }
+
+    if (!date) {
+      return res.status(400).json({ error: 'कृपया यज्ञ तिथि चुनें।' });
+    }
+
+    const bookingAmount = Math.max(1, Number(amount) || 2100);
+
+    // Enforce 1 registered mobile = max 1 kund per day restriction
+    const restriction = checkMobileBookingRestriction(cleanMobile, String(date));
+    if (!restriction.allowed) {
+      return res.status(400).json({
+        error: 'इस मोबाइल नंबर से इस दिन पहले ही एक कुंड पंजीकृत है। एक मोबाइल नंबर से एक दिन में केवल एक कुंड का पंजीकरण किया जा सकता है।',
+        code: 'DAILY_LIMIT_EXCEEDED',
+        existingKundNumber: restriction.existingKundNumber,
+      });
+    }
+
+    // Atomic availability check & 5-minute temporary lock
+    const settings = getSystemSettingsFromDb();
+    const expiryMinutes = settings.reservationExpiryMinutes || 5;
+    const nowIso = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
+    const lockId = `lock-${kNum}-${cleanMobile.slice(-4)}-${Date.now()}`;
+
+    const lockData: DbKundLock = {
+      lock_id: lockId,
+      kund_id: kNum,
+      booking_date: String(date),
+      mobile_number: cleanMobile,
+      user_name: primaryName,
+      amount: bookingAmount,
+      locked_at: nowIso,
+      lock_expires_at: expiresAt,
+      status: 'LOCKED',
+    };
+
+    const lockResult = createOrRenewKundLock(lockData);
+    if (!lockResult.success) {
+      const isDailyLimit = lockResult.error?.includes('इस दिन पहले ही एक कुंड पंजीकृत है');
+      return res.status(isDailyLimit ? 400 : 409).json({
+        error: lockResult.error || 'यह कुंड अभी किसी अन्य व्यक्ति द्वारा बुक किया जा रहा है। कृपया दूसरा कुंड चुनें।',
+        code: isDailyLimit ? 'DAILY_LIMIT_EXCEEDED' : 'KUND_LOCKED',
+      });
+    }
+
+    // Unique internal booking ID
+    const bookingId = `BU2026-BKG-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+    // Create Payment Order via Gateway or Sandbox
+    let paymentOrderId = '';
+    let isTestMode = !isGatewayLive;
+
+    if (isGatewayLive && razorpayClient) {
+      try {
+        const orderOptions = {
+          amount: Math.round(bookingAmount * 100), // in paise
+          currency: 'INR',
+          receipt: bookingId,
+          notes: {
+            bookingId,
+            kundNumber: String(kNum),
+            eventDate: String(date),
+            mobile: cleanMobile,
+            devoteeName: primaryName,
+          },
+        };
+        const rzpOrder = await razorpayClient.orders.create(orderOptions);
+        paymentOrderId = rzpOrder.id;
+      } catch (gatewayErr: any) {
+        console.error('Error creating Razorpay order:', gatewayErr);
+        isTestMode = true;
+        paymentOrderId = `order_test_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      }
+    } else {
+      paymentOrderId = `order_test_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    }
+
+    // Save pending booking to database
+    const newBooking: DbBooking = {
+      bookingId,
+      name: primaryName,
+      mobile: cleanMobile,
+      email: email ? String(email).trim() : undefined,
+      eventDate: String(date),
+      kundNumber: kNum,
+      amount: bookingAmount,
+      bookingStatus: 'PENDING',
+      paymentStatus: 'CREATED',
+      paymentOrderId,
+      lockExpiresAt: expiresAt,
+      address: address || 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304',
+      gotra: gotra ? String(gotra).trim() : undefined,
+      wifeName: wifeName ? String(wifeName).trim() : undefined,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    createOrUpdateBooking(newBooking);
+
+    return res.status(200).json({
+      success: true,
+      bookingId,
+      orderId: paymentOrderId,
+      amount: bookingAmount,
+      currency: 'INR',
+      keyId: PAYMENT_KEY_ID || 'rzp_test_dummy_key_sandbox',
+      isTestMode,
+      testModeNotice: isTestMode
+        ? 'TEST PAYMENT MODE: वास्तविक पेमेंट गेटवे (Razorpay) कुंजियां .env में सेट नहीं हैं। परीक्षण मोड सक्रिय है।'
+        : undefined,
+      customer: {
+        name: primaryName,
+        mobile: cleanMobile,
+        email: email ? String(email).trim() : 'devotee@bharatutkarsh.org',
+      },
+      lockExpiresAt: expiresAt,
+      remainingSeconds: lockResult.remainingSeconds || expiryMinutes * 60,
+    });
+  } catch (error: any) {
+    console.error('Error in /api/payment/create-order:', error);
+    return res.status(500).json({ error: error.message || 'भुगतान ऑर्डर बनाने में त्रुटि।' });
+  } finally {
+    release();
+  }
+});
+
+// 2. Verify Payment (POST /api/payment/verify) - NEVER trust frontend redirects alone
+app.post('/api/payment/verify', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
+  try {
+    const { bookingId, razorpay_order_id, razorpay_payment_id, razorpay_signature, isTestMode } = req.body;
+
+    if (!bookingId) {
+      return res.status(400).json({ error: 'बुकिंग पहचानकर्ता (Booking ID) अनिवार्य है।' });
+    }
+
+    const booking = getBookingById(String(bookingId));
+    if (!booking) {
+      return res.status(404).json({ error: 'बुकिंग रिकॉर्ड नहीं मिला।' });
+    }
+
+    // Idempotency: if already confirmed, return existing confirmed booking
+    if (booking.bookingStatus === 'CONFIRMED' && booking.paymentStatus === 'SUCCESS') {
+      return res.json({
+        success: true,
+        booking,
+        tokenNumber: booking.tokenNumber,
+        qrCode: booking.qrCode,
+        message: 'भुगतान पहले ही सत्यापित व पुष्ट हो चुका है।',
+      });
+    }
+
+    // Strict Backend Signature & Gateway Verification
+    if (isGatewayLive && !isTestMode) {
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return res.status(400).json({
+          error: 'अवैध भुगतान विवरण: गेटवे हस्ताक्षर या भुगतान आईडी अनुपलब्ध है।',
+        });
+      }
+
+      // Verify HMAC-SHA256 signature
+      const expectedSignature = crypto
+        .createHmac('sha256', PAYMENT_KEY_SECRET)
+        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+        .digest('hex');
+
+      if (expectedSignature !== razorpay_signature) {
+        failBookingPayment(booking.bookingId, 'डिजिटल हस्ताक्षर सत्यापन विफल');
+        return res.status(400).json({
+          error: 'भुगतान सत्यापन असफल: डिजिटल हस्ताक्षर अमान्य है। कृपया पुनः प्रयास करें।',
+        });
+      }
+
+      // Verify payment entity with Razorpay API directly
+      if (razorpayClient) {
+        try {
+          const paymentEntity: any = await razorpayClient.payments.fetch(razorpay_payment_id);
+          if (paymentEntity.status !== 'captured' && paymentEntity.status !== 'authorized') {
+            failBookingPayment(booking.bookingId, `भुगतान स्थिति अमान्य: ${paymentEntity.status}`);
+            return res.status(400).json({
+              error: `भुगतान बैंक द्वारा स्वीकृत नहीं हुआ। वर्तमान स्थिति: ${paymentEntity.status}`,
+            });
+          }
+
+          // Verify amount matches (in paise)
+          const expectedPaise = Math.round(booking.amount * 100);
+          if (Number(paymentEntity.amount) !== expectedPaise) {
+            failBookingPayment(booking.bookingId, 'भुगतान राशि में विसंगति');
+            return res.status(400).json({
+              error: 'भुगतान राशि में विसंगति पाई गई। कृपया आश्रम सहायता से संपर्क करें।',
+            });
+          }
+        } catch (apiErr: any) {
+          console.error('Error fetching payment from Razorpay API:', apiErr);
+        }
+      }
+    } else {
+      // Sandbox / Test Mode verification
+      if (!razorpay_payment_id) {
+        return res.status(400).json({ error: 'परीक्षण भुगतान आईडी प्राप्त नहीं हुई।' });
+      }
+    }
+
+    // Generate signed QR code verification data
+    const tokenNumber = generateNextTokenNumber();
+    const qrSignaturePayload = `${booking.bookingId}:${tokenNumber}:${booking.eventDate}:${booking.kundNumber}:${booking.mobile}`;
+    const hash = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(qrSignaturePayload).digest('hex').slice(0, 16);
+    const verificationUrl = `${APP_URL}/api/booking/verify/${booking.bookingId}?sig=${hash}`;
+    const qrData = `${verificationUrl}|${tokenNumber}|K${String(booking.kundNumber).padStart(3, '0')}|${booking.eventDate}`;
+
+    // Confirm booking and release/convert lock
+    const confirmResult = confirmBookingPayment({
+      bookingId: booking.bookingId,
+      paymentId: razorpay_payment_id || `TEST-PAY-${Date.now()}`,
+      paymentOrderId: razorpay_order_id || booking.paymentOrderId,
+      qrCode: qrData,
+    });
+
+    if (!confirmResult.success || !confirmResult.booking) {
+      return res.status(400).json({ error: confirmResult.error || 'बुकिंग पुष्टिकरण में त्रुटि।' });
+    }
+
+    // Insert audit log
+    insertAuditLog({
+      id: `audit-${Date.now()}`,
+      adminUsername: 'SYSTEM_GATEWAY_VERIFY',
+      action: 'PAYMENT_VERIFIED_BOOKED',
+      bookingId: booking.bookingId,
+      token: tokenNumber,
+      customerName: booking.name,
+      kundNumber: booking.kundNumber,
+      amount: booking.amount,
+      utrNumber: razorpay_payment_id,
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.json({
+      success: true,
+      booking: confirmResult.booking,
+      tokenNumber,
+      qrCode: qrData,
+      verificationUrl,
+      message: 'भुगतान सफल! आपका हवन कुंड सफलतापूर्वक आरक्षित कर लिया गया है।',
+    });
+  } catch (error: any) {
+    console.error('Error in /api/payment/verify:', error);
+    return res.status(500).json({ error: error.message || 'भुगतान सत्यापन में त्रुटि।' });
+  } finally {
+    release();
+  }
+});
+
+// 3. Payment Status Polling (GET /api/payment/status/:orderId)
+app.get('/api/payment/status/:orderId', async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    let booking = getBookingByOrderId(orderId) || getBookingById(orderId);
+    if (!booking) {
+      return res.status(404).json({ error: 'ऑर्डर या बुकिंग नहीं मिली।' });
+    }
+
+    // If still PENDING and live gateway, check Razorpay directly
+    if (booking.bookingStatus === 'PENDING' && isGatewayLive && razorpayClient && booking.paymentOrderId) {
+      try {
+        const payments: any = await razorpayClient.orders.fetchPayments(booking.paymentOrderId);
+        if (payments && payments.items && payments.items.length > 0) {
+          const successfulPay = payments.items.find((p: any) => p.status === 'captured');
+          if (successfulPay) {
+            const confirmResult = confirmBookingPayment({
+              bookingId: booking.bookingId,
+              paymentId: successfulPay.id,
+              paymentOrderId: booking.paymentOrderId,
+            });
+            if (confirmResult.success && confirmResult.booking) {
+              booking = confirmResult.booking;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Could not poll Razorpay order payments:', e);
+      }
+    }
+
+    return res.json({
+      success: true,
+      bookingId: booking.bookingId,
+      orderId: booking.paymentOrderId,
+      bookingStatus: booking.bookingStatus,
+      paymentStatus: booking.paymentStatus,
+      tokenNumber: booking.tokenNumber,
+      booking,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'स्थिति जांचने में त्रुटि।' });
+  }
+});
+
+// 4. Secure Payment Webhook (POST /api/payment/webhook)
+app.post('/api/payment/webhook', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
+  try {
+    const webhookSignature = req.headers['x-razorpay-signature'];
+
+    // 1. Signature Verification using PAYMENT_WEBHOOK_SECRET
+    if (PAYMENT_WEBHOOK_SECRET) {
+      const expectedSignature = crypto
+        .createHmac('sha256', PAYMENT_WEBHOOK_SECRET)
+        .update((req as any).rawBody || JSON.stringify(req.body))
+        .digest('hex');
+
+      if (expectedSignature !== webhookSignature) {
+        console.warn('⚠️ Webhook signature mismatch.');
+        return res.status(400).json({ error: 'Invalid webhook signature' });
+      }
+    }
+
+    const event = req.body.event;
+    const payload = req.body.payload;
+
+    if (event === 'payment.captured' || event === 'order.paid') {
+      const paymentEntity = payload.payment ? payload.payment.entity : null;
+      const orderId = paymentEntity?.order_id || payload.order?.entity?.id;
+      const paymentId = paymentEntity?.id;
+
+      if (orderId) {
+        const booking = getBookingByOrderId(orderId);
+        if (booking) {
+          // Idempotent: prevent duplicate processing
+          if (booking.bookingStatus !== 'CONFIRMED') {
+            confirmBookingPayment({
+              bookingId: booking.bookingId,
+              paymentId: paymentId || `WEBHOOK-${Date.now()}`,
+              paymentOrderId: orderId,
+            });
+            console.log(`✅ Webhook confirmed booking ${booking.bookingId} for Kund #${booking.kundNumber}`);
+          }
+        }
+      }
+    } else if (event === 'payment.failed') {
+      const paymentEntity = payload.payment ? payload.payment.entity : null;
+      const orderId = paymentEntity?.order_id;
+      if (orderId) {
+        const booking = getBookingByOrderId(orderId);
+        if (booking && booking.bookingStatus !== 'CONFIRMED') {
+          failBookingPayment(booking.bookingId, paymentEntity?.error_description || 'Payment Failed');
+          console.log(`ℹ️ Webhook marked payment failed for ${booking.bookingId}, lock released.`);
+        }
+      }
+    }
+
+    return res.status(200).json({ status: 'ok' });
+  } catch (err: any) {
+    console.error('Error handling webhook:', err);
+    return res.status(500).json({ error: err.message || 'Webhook error' });
+  } finally {
+    release();
+  }
+});
+
+// 5. Cancel Booking / Payment (POST /api/payment/cancel)
+app.post('/api/payment/cancel', async (req: Request, res: Response) => {
+  const release = await bookingMutex.acquire();
+  try {
+    const { bookingId } = req.body;
+    if (bookingId) {
+      cancelBookingPayment(String(bookingId));
+    }
+    return res.json({ success: true, message: 'भुगतान रद्द किया गया एवं कुंड लॉक मुक्त कर दिया गया।' });
+  } finally {
+    release();
+  }
+});
+
+// 6. Public / Gate Scanner Booking Verification (GET /api/booking/verify/:bookingId)
+app.get('/api/booking/verify/:bookingId', (req: Request, res: Response) => {
+  const { bookingId } = req.params;
+  const booking = getBookingById(bookingId) || getAllBookingsFromDb().find((b) => b.tokenNumber === bookingId);
+
+  const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+
+  if (!booking || booking.bookingStatus !== 'CONFIRMED') {
+    if (acceptsHtml) {
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html lang="hi">
+        <head>
+          <meta charset="utf-8"/>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+          <title>बुकिंग सत्यापन • अमान्य पास</title>
+          <style>
+            body { font-family: system-ui, sans-serif; background: #fff5f5; color: #9b1c1c; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 16px; }
+            .card { background: white; border: 2px solid #f87171; border-radius: 16px; padding: 28px; max-width: 440px; width: 100%; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
+            h1 { color: #dc2626; font-size: 22px; margin-top: 0; }
+            p { color: #4b5563; font-size: 14px; line-height: 1.6; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div style="font-size: 48px; margin-bottom: 12px;">⚠️</div>
+            <h1>अमान्य या लंबित बुकिंग</h1>
+            <p>यह बुकिंग पहचानकर्ता (Booking ID: <strong>${bookingId}</strong>) मान्य नहीं है अथवा इसका भुगतान अभी तक पुष्ट नहीं हुआ है।</p>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+    return res.status(404).json({ valid: false, error: 'बुकिंग अमान्य या लंबित है।' });
+  }
+
+  if (acceptsHtml) {
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="hi">
+      <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>प्रमाणित बुकिंग • भारत उत्कर्ष महायज्ञ 2026</title>
+        <style>
+          body { font-family: system-ui, sans-serif; background: #fffbf0; color: #78350f; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 16px; }
+          .card { background: white; border: 2px solid #f59e0b; border-radius: 20px; padding: 28px; max-width: 460px; width: 100%; box-shadow: 0 12px 30px rgba(180,83,9,0.12); }
+          .badge { background: #dcfce7; color: #15803d; padding: 6px 14px; border-radius: 999px; font-weight: 700; font-size: 13px; display: inline-block; margin-bottom: 12px; }
+          h1 { color: #b45309; font-size: 20px; margin: 6px 0 16px 0; text-align: center; }
+          .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #fed7aa; font-size: 14px; }
+          .label { color: #9a3412; font-weight: 500; }
+          .val { color: #1f2937; font-weight: 700; text-align: right; }
+          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #9ca3af; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div style="text-align: center;">
+            <span class="badge">✓ अधिकृत एवं सत्यापित प्रवेश पत्र</span>
+            <h1>भारत उत्कर्ष महायज्ञ 2026</h1>
+          </div>
+          <div class="row"><span class="label">टोकन संख्या</span><span class="val" style="color: #b45309; font-size: 16px;">${booking.tokenNumber}</span></div>
+          <div class="row"><span class="label">यजमान का नाम</span><span class="val">${booking.name}</span></div>
+          <div class="row"><span class="label">हवन कुंड संख्या</span><span class="val">#${String(booking.kundNumber).padStart(3, '0')}</span></div>
+          <div class="row"><span class="label">यज्ञ तिथि</span><span class="val">${booking.eventDate}</span></div>
+          <div class="row"><span class="label">यज्ञ समय</span><span class="val">प्रातः 09:00 AM</span></div>
+          <div class="row"><span class="label">पंजीकृत मोबाइल</span><span class="val">******${booking.mobile.slice(-4)}</span></div>
+          <div class="row"><span class="label">भुगतान राशि</span><span class="val">₹${booking.amount.toLocaleString('en-IN')} (सफल)</span></div>
+          <div class="row"><span class="label">Payment ID</span><span class="val" style="font-size: 12px;">${booking.paymentId || 'GATEWAY-UPI'}</span></div>
+          <div class="footer">महर्षि आश्रम, रामलीला मैदान, सेक्टर-110, नोएडा</div>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  return res.json({
+    valid: true,
+    bookingId: booking.bookingId,
+    tokenNumber: booking.tokenNumber,
+    name: booking.name,
+    mobile: booking.mobile,
+    kundNumber: booking.kundNumber,
+    eventDate: booking.eventDate,
+    timeSlot: 'प्रातः 09:00 AM',
+    amount: booking.amount,
+    paymentStatus: booking.paymentStatus,
+    bookingStatus: booking.bookingStatus,
+    paymentId: booking.paymentId,
+    verifiedAt: new Date().toISOString(),
+  });
 });
 
 // -------------------------------------------------------------

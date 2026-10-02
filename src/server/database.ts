@@ -89,6 +89,29 @@ export interface DbKundLock {
   status: 'LOCKED' | 'EXPIRED' | 'RELEASED' | 'CONVERTED';
 }
 
+export interface DbBooking {
+  bookingId: string;
+  tokenNumber?: string;
+  userId?: string;
+  name: string;
+  mobile: string;
+  email?: string;
+  eventDate: string;
+  kundNumber: number;
+  amount: number;
+  bookingStatus: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
+  paymentStatus: 'CREATED' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
+  paymentOrderId?: string;
+  paymentId?: string;
+  qrCode?: string;
+  lockExpiresAt?: string;
+  address?: string;
+  gotra?: string;
+  wifeName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export async function initSqliteDatabase() {
   if (isInitialized && dbInstance) return dbInstance;
 
@@ -193,6 +216,48 @@ export async function initSqliteDatabase() {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_devotee_mobile ON devotee_users(mobile);
+
+    -- Dedicated Bookings Table for Production UPI Flow
+    CREATE TABLE IF NOT EXISTS bookings (
+      booking_id TEXT PRIMARY KEY,
+      token_number TEXT UNIQUE,
+      user_id TEXT,
+      name TEXT NOT NULL,
+      mobile TEXT NOT NULL,
+      email TEXT,
+      event_date TEXT NOT NULL,
+      kund_number INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      booking_status TEXT NOT NULL DEFAULT 'PENDING',
+      payment_status TEXT NOT NULL DEFAULT 'CREATED',
+      payment_order_id TEXT,
+      payment_id TEXT,
+      qr_code TEXT,
+      lock_expires_at TEXT,
+      address TEXT,
+      gotra TEXT,
+      wife_name TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bookings_mobile_date ON bookings(mobile, event_date);
+    CREATE INDEX IF NOT EXISTS idx_bookings_order_id ON bookings(payment_order_id);
+    CREATE INDEX IF NOT EXISTS idx_bookings_token ON bookings(token_number);
+    CREATE INDEX IF NOT EXISTS idx_bookings_kund_date ON bookings(kund_number, event_date);
+    CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(booking_status, payment_status);
+
+    -- Enforce 1 confirmed booking per mobile per day at DB level
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_booking_mobile_date 
+    ON bookings(mobile, event_date) 
+    WHERE booking_status = 'CONFIRMED';
+
+    -- Concurrency-Safe Sequence for BU2026-XXXXXX tokens
+    CREATE TABLE IF NOT EXISTS token_sequence (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      current_val INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT OR IGNORE INTO token_sequence (id, current_val) VALUES (1, 0);
   `);
 
   // Migrate existing table columns if opened from older disk version
@@ -648,6 +713,28 @@ export function checkMobileBookingRestriction(
   if (!dbInstance) return { allowed: true };
   try {
     cleanupExpiredLocks();
+
+    // Check confirmed bookings table
+    const bkgStmt = dbInstance.prepare(`
+      SELECT kund_number, token_number, booking_status, event_date 
+      FROM bookings 
+      WHERE mobile = :mobile AND event_date = :date 
+        AND booking_status = 'CONFIRMED'
+      LIMIT 1;
+    `);
+    bkgStmt.bind({ ':mobile': cleanMobile, ':date': date });
+    if (bkgStmt.step()) {
+      const row = bkgStmt.getAsObject();
+      bkgStmt.free();
+      return {
+        allowed: false,
+        existingKundNumber: Number(row.kund_number),
+        existingToken: String(row.token_number || ''),
+        reason: 'इस मोबाइल नंबर से इस दिन पहले ही एक कुंड पंजीकृत है। एक मोबाइल नंबर से एक दिन में केवल एक कुंड का पंजीकरण किया जा सकता है।',
+      };
+    }
+    bkgStmt.free();
+
     const stmt = dbInstance.prepare(`
       SELECT kund_number, token, payment_status, date 
       FROM registrations 
@@ -701,7 +788,31 @@ export function getKundDetailedStatus(
     cleanupExpiredLocks();
     const nowIso = new Date().toISOString();
 
-    // Check confirmed booking first
+    // Check confirmed booking table first
+    const bkgStmt = dbInstance.prepare(`
+      SELECT booking_id, token_number, name 
+      FROM bookings 
+      WHERE kund_number = :kundId AND event_date = :date 
+        AND booking_status = 'CONFIRMED'
+      LIMIT 1;
+    `);
+    bkgStmt.bind({ ':kundId': kundId, ':date': date });
+    if (bkgStmt.step()) {
+      const row = bkgStmt.getAsObject();
+      bkgStmt.free();
+      return {
+        available: false,
+        status: 'BOOKED',
+        reason: `हवन कुंड #${String(kundId).padStart(3, '0')} इस तिथि (${date}) हेतु पहले से आरक्षित (Booked) है।`,
+        booking: {
+          token: String(row.token_number || ''),
+          name: String(row.name),
+        },
+      };
+    }
+    bkgStmt.free();
+
+    // Check confirmed registration
     const regStmt = dbInstance.prepare(`
       SELECT id, token, full_name, husband_name, payment_status 
       FROM registrations 
@@ -924,6 +1035,332 @@ export function convertLockToConfirmed(kundId: number, date: string, mobile: str
   }
 }
 
+// -------------------------------------------------------------
+// Production Bookings & Token Generation System
+// -------------------------------------------------------------
+
+export function generateNextTokenNumber(): string {
+  if (!dbInstance) {
+    const fallbackNum = Math.floor(100000 + Math.random() * 900000);
+    return `BU2026-${fallbackNum}`;
+  }
+  try {
+    dbInstance.run(`UPDATE token_sequence SET current_val = current_val + 1 WHERE id = 1;`);
+    const res = dbInstance.exec(`SELECT current_val FROM token_sequence WHERE id = 1;`);
+    let seq = 1;
+    if (res && res.length > 0 && res[0].values.length > 0) {
+      seq = Number(res[0].values[0][0]);
+    }
+    saveSqliteToDisk();
+    return `BU2026-${String(seq).padStart(6, '0')}`;
+  } catch (e) {
+    console.error('Error generating token number:', e);
+    const fallbackNum = Math.floor(100000 + Math.random() * 900000);
+    return `BU2026-${fallbackNum}`;
+  }
+}
+
+export function createOrUpdateBooking(booking: DbBooking): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`
+      INSERT INTO bookings (
+        booking_id, token_number, user_id, name, mobile, email,
+        event_date, kund_number, amount, booking_status, payment_status,
+        payment_order_id, payment_id, qr_code, lock_expires_at,
+        address, gotra, wife_name, created_at, updated_at
+      ) VALUES (
+        :booking_id, :token_number, :user_id, :name, :mobile, :email,
+        :event_date, :kund_number, :amount, :booking_status, :payment_status,
+        :payment_order_id, :payment_id, :qr_code, :lock_expires_at,
+        :address, :gotra, :wife_name, :created_at, :updated_at
+      )
+      ON CONFLICT(booking_id) DO UPDATE SET
+        token_number = COALESCE(excluded.token_number, bookings.token_number),
+        user_id = COALESCE(excluded.user_id, bookings.user_id),
+        name = excluded.name,
+        mobile = excluded.mobile,
+        email = excluded.email,
+        event_date = excluded.event_date,
+        kund_number = excluded.kund_number,
+        amount = excluded.amount,
+        booking_status = excluded.booking_status,
+        payment_status = excluded.payment_status,
+        payment_order_id = COALESCE(excluded.payment_order_id, bookings.payment_order_id),
+        payment_id = COALESCE(excluded.payment_id, bookings.payment_id),
+        qr_code = COALESCE(excluded.qr_code, bookings.qr_code),
+        lock_expires_at = excluded.lock_expires_at,
+        address = excluded.address,
+        gotra = excluded.gotra,
+        wife_name = excluded.wife_name,
+        updated_at = excluded.updated_at;
+    `);
+
+    stmt.run({
+      ':booking_id': booking.bookingId,
+      ':token_number': booking.tokenNumber || null,
+      ':user_id': booking.userId || null,
+      ':name': booking.name,
+      ':mobile': booking.mobile,
+      ':email': booking.email || null,
+      ':event_date': booking.eventDate,
+      ':kund_number': booking.kundNumber,
+      ':amount': booking.amount,
+      ':booking_status': booking.bookingStatus,
+      ':payment_status': booking.paymentStatus,
+      ':payment_order_id': booking.paymentOrderId || null,
+      ':payment_id': booking.paymentId || null,
+      ':qr_code': booking.qrCode || null,
+      ':lock_expires_at': booking.lockExpiresAt || null,
+      ':address': booking.address || null,
+      ':gotra': booking.gotra || null,
+      ':wife_name': booking.wifeName || null,
+      ':created_at': booking.createdAt || new Date().toISOString(),
+      ':updated_at': booking.updatedAt || new Date().toISOString(),
+    });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error saving booking to SQLite:', e);
+    return false;
+  }
+}
+
+export function getBookingById(bookingId: string): DbBooking | null {
+  if (!dbInstance) return null;
+  try {
+    const stmt = dbInstance.prepare(`SELECT * FROM bookings WHERE booking_id = :id LIMIT 1;`);
+    stmt.bind({ ':id': bookingId });
+    let result: DbBooking | null = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      result = {
+        bookingId: String(row.booking_id),
+        tokenNumber: row.token_number ? String(row.token_number) : undefined,
+        userId: row.user_id ? String(row.user_id) : undefined,
+        name: String(row.name),
+        mobile: String(row.mobile),
+        email: row.email ? String(row.email) : undefined,
+        eventDate: String(row.event_date),
+        kundNumber: Number(row.kund_number),
+        amount: Number(row.amount),
+        bookingStatus: row.booking_status as any,
+        paymentStatus: row.payment_status as any,
+        paymentOrderId: row.payment_order_id ? String(row.payment_order_id) : undefined,
+        paymentId: row.payment_id ? String(row.payment_id) : undefined,
+        qrCode: row.qr_code ? String(row.qr_code) : undefined,
+        lockExpiresAt: row.lock_expires_at ? String(row.lock_expires_at) : undefined,
+        address: row.address ? String(row.address) : undefined,
+        gotra: row.gotra ? String(row.gotra) : undefined,
+        wifeName: row.wife_name ? String(row.wife_name) : undefined,
+        createdAt: String(row.created_at),
+        updatedAt: String(row.updated_at),
+      };
+    }
+    stmt.free();
+    return result;
+  } catch (e) {
+    console.error('Error fetching booking by id:', e);
+    return null;
+  }
+}
+
+export function getBookingByOrderId(orderId: string): DbBooking | null {
+  if (!dbInstance) return null;
+  try {
+    const stmt = dbInstance.prepare(`SELECT * FROM bookings WHERE payment_order_id = :orderId LIMIT 1;`);
+    stmt.bind({ ':orderId': orderId });
+    let result: DbBooking | null = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      result = {
+        bookingId: String(row.booking_id),
+        tokenNumber: row.token_number ? String(row.token_number) : undefined,
+        userId: row.user_id ? String(row.user_id) : undefined,
+        name: String(row.name),
+        mobile: String(row.mobile),
+        email: row.email ? String(row.email) : undefined,
+        eventDate: String(row.event_date),
+        kundNumber: Number(row.kund_number),
+        amount: Number(row.amount),
+        bookingStatus: row.booking_status as any,
+        paymentStatus: row.payment_status as any,
+        paymentOrderId: row.payment_order_id ? String(row.payment_order_id) : undefined,
+        paymentId: row.payment_id ? String(row.payment_id) : undefined,
+        qrCode: row.qr_code ? String(row.qr_code) : undefined,
+        lockExpiresAt: row.lock_expires_at ? String(row.lock_expires_at) : undefined,
+        address: row.address ? String(row.address) : undefined,
+        gotra: row.gotra ? String(row.gotra) : undefined,
+        wifeName: row.wife_name ? String(row.wife_name) : undefined,
+        createdAt: String(row.created_at),
+        updatedAt: String(row.updated_at),
+      };
+    }
+    stmt.free();
+    return result;
+  } catch (e) {
+    console.error('Error fetching booking by orderId:', e);
+    return null;
+  }
+}
+
+export function getAllBookingsFromDb(): DbBooking[] {
+  if (!dbInstance) return [];
+  try {
+    const res = dbInstance.exec(`
+      SELECT * FROM bookings ORDER BY datetime(created_at) DESC;
+    `);
+    if (!res || res.length === 0) return [];
+    const { columns, values } = res[0];
+    return values.map((row: any[]) => {
+      const obj: any = {};
+      columns.forEach((col: string, idx: number) => {
+        obj[col] = row[idx];
+      });
+      return {
+        bookingId: String(obj.booking_id),
+        tokenNumber: obj.token_number ? String(obj.token_number) : undefined,
+        userId: obj.user_id ? String(obj.user_id) : undefined,
+        name: String(obj.name),
+        mobile: String(obj.mobile),
+        email: obj.email ? String(obj.email) : undefined,
+        eventDate: String(obj.event_date),
+        kundNumber: Number(obj.kund_number),
+        amount: Number(obj.amount),
+        bookingStatus: obj.booking_status,
+        paymentStatus: obj.payment_status,
+        paymentOrderId: obj.payment_order_id ? String(obj.payment_order_id) : undefined,
+        paymentId: obj.payment_id ? String(obj.payment_id) : undefined,
+        qrCode: obj.qr_code ? String(obj.qr_code) : undefined,
+        lockExpiresAt: obj.lock_expires_at ? String(obj.lock_expires_at) : undefined,
+        address: obj.address ? String(obj.address) : undefined,
+        gotra: obj.gotra ? String(obj.gotra) : undefined,
+        wifeName: obj.wife_name ? String(obj.wife_name) : undefined,
+        createdAt: String(obj.created_at),
+        updatedAt: String(obj.updated_at),
+      };
+    });
+  } catch (e) {
+    console.error('Error getting all bookings:', e);
+    return [];
+  }
+}
+
+export function confirmBookingPayment(params: {
+  bookingId: string;
+  paymentId: string;
+  paymentOrderId?: string;
+  qrCode?: string;
+}): { success: boolean; booking?: DbBooking; error?: string } {
+  if (!dbInstance) return { success: false, error: 'Database unavailable' };
+  try {
+    const existing = getBookingById(params.bookingId);
+    if (!existing) {
+      return { success: false, error: 'बुकिंग रिकॉर्ड नहीं मिला।' };
+    }
+
+    // Idempotency: if already confirmed, return current confirmed record
+    if (existing.bookingStatus === 'CONFIRMED' && existing.paymentStatus === 'SUCCESS') {
+      return { success: true, booking: existing };
+    }
+
+    // Enforce 1 mobile per day restriction if another booking was confirmed concurrently
+    const restriction = checkMobileBookingRestriction(existing.mobile, existing.eventDate);
+    if (!restriction.allowed && restriction.existingKundNumber !== existing.kundNumber) {
+      return { success: false, error: restriction.reason };
+    }
+
+    const tokenNumber = existing.tokenNumber || generateNextTokenNumber();
+    const nowIso = new Date().toISOString();
+    const qrData = params.qrCode || `BU2026|${existing.bookingId}|${tokenNumber}|${existing.eventDate}|KUND${existing.kundNumber}|${existing.mobile}`;
+
+    existing.tokenNumber = tokenNumber;
+    existing.bookingStatus = 'CONFIRMED';
+    existing.paymentStatus = 'SUCCESS';
+    existing.paymentId = params.paymentId;
+    if (params.paymentOrderId) existing.paymentOrderId = params.paymentOrderId;
+    existing.qrCode = qrData;
+    existing.updatedAt = nowIso;
+
+    createOrUpdateBooking(existing);
+    convertLockToConfirmed(existing.kundNumber, existing.eventDate, existing.mobile);
+
+    // Sync into registrations table so legacy tickets & views work seamlessly
+    const regRecord: DbRegistration = {
+      id: existing.bookingId,
+      token: tokenNumber,
+      userId: existing.userId,
+      fullName: existing.name,
+      husbandName: existing.name,
+      wifeName: existing.wifeName,
+      mobile: existing.mobile,
+      email: existing.email,
+      city: 'नोएडा',
+      kundNumber: existing.kundNumber,
+      date: existing.eventDate,
+      timeSlot: 'प्रातः 09:00 AM',
+      participationType: 'दंपति',
+      personCount: 2,
+      amount: existing.amount,
+      paymentStatus: 'paid',
+      utrNumber: params.paymentId,
+      paymentDate: nowIso.slice(0, 10),
+      verificationHash: `GATEWAY-UPI-${params.paymentId}`,
+      address: existing.address || 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304',
+      gotra: existing.gotra,
+      createdAt: existing.createdAt || nowIso,
+    };
+    insertOrUpdateRegistration(regRecord);
+
+    return { success: true, booking: existing };
+  } catch (e: any) {
+    console.error('Error confirming booking payment:', e);
+    return { success: false, error: e.message || 'भुगतान पुष्टिकरण में त्रुटि।' };
+  }
+}
+
+export function failBookingPayment(bookingId: string, reason?: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const booking = getBookingById(bookingId);
+    if (!booking) return false;
+    if (booking.bookingStatus === 'CONFIRMED') return true; // Don't cancel already confirmed
+
+    booking.bookingStatus = 'CANCELLED';
+    booking.paymentStatus = 'FAILED';
+    booking.updatedAt = new Date().toISOString();
+    createOrUpdateBooking(booking);
+
+    // Release temporary kund lock
+    releaseKundLock(booking.kundNumber, booking.eventDate, booking.mobile);
+    return true;
+  } catch (e) {
+    console.error('Error failing booking payment:', e);
+    return false;
+  }
+}
+
+export function cancelBookingPayment(bookingId: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const booking = getBookingById(bookingId);
+    if (!booking) return false;
+    if (booking.bookingStatus === 'CONFIRMED') return true;
+
+    booking.bookingStatus = 'CANCELLED';
+    booking.paymentStatus = 'CANCELLED';
+    booking.updatedAt = new Date().toISOString();
+    createOrUpdateBooking(booking);
+
+    releaseKundLock(booking.kundNumber, booking.eventDate, booking.mobile);
+    return true;
+  } catch (e) {
+    console.error('Error cancelling booking payment:', e);
+    return false;
+  }
+}
+
 // 7. Get All Active Locks (for Admin & Tracker)
 export function getAllActiveKundLocks(): (DbKundLock & { remainingSeconds: number; formattedKundNumber: string })[] {
   if (!dbInstance) return [];
@@ -972,12 +1409,31 @@ export function getRealTimeKundsForDate(date: string, requestingMobile?: string)
   const activeLockMap = new Map<number, (DbKundLock & { remainingSeconds: number })>();
   allActiveLocks.forEach((l) => activeLockMap.set(l.kund_id, l));
 
-  // Get confirmed registrations for this date
+  // Get confirmed registrations and bookings for this date
   const regs = getAllRegistrationsFromDb().filter(
     (r) => r.date === date && (r.paymentStatus === 'paid' || r.paymentStatus === 'counter_pay' || r.paymentStatus === 'pending')
   );
-  const bookingMap = new Map<number, DbRegistration>();
-  regs.forEach((r) => bookingMap.set(r.kundNumber, r));
+  const bookingMap = new Map<number, { token: string; name: string; paymentStatus: string }>();
+  regs.forEach((r) =>
+    bookingMap.set(r.kundNumber, {
+      token: r.token,
+      name: r.fullName || r.husbandName || 'यजमान',
+      paymentStatus: r.paymentStatus,
+    })
+  );
+
+  const confirmedBookings = getAllBookingsFromDb().filter(
+    (b) => b.eventDate === date && b.bookingStatus === 'CONFIRMED'
+  );
+  confirmedBookings.forEach((b) => {
+    if (!bookingMap.has(b.kundNumber)) {
+      bookingMap.set(b.kundNumber, {
+        token: b.tokenNumber || b.bookingId,
+        name: b.name,
+        paymentStatus: 'paid',
+      });
+    }
+  });
 
   const cleanReqMob = requestingMobile ? String(requestingMobile).replace(/\D/g, '').slice(-10) : '';
 
@@ -1002,7 +1458,7 @@ export function getRealTimeKundsForDate(date: string, requestingMobile?: string)
     const booking = bookingMap.get(i);
     if (booking) {
       bookedCount++;
-      const maskName = booking.fullName || booking.husbandName || 'यजमान';
+      const maskName = booking.name;
       kunds.push({
         kundNumber: i,
         formattedNumber,

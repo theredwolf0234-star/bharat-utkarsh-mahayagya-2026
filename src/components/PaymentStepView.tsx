@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import {
   CheckCircle2,
   Printer,
   Clock,
-  ShieldCheck,
   RefreshCw,
   Download,
   Copy,
   Check,
   FileText,
   ArrowLeft,
+  CreditCard,
+  AlertTriangle,
+  XCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { Registration, SystemSettings, AuditLog } from '../types/yagya';
 import { getWhatsAppSendUrl } from '../utils/whatsapp';
@@ -35,12 +39,27 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
   onGoHome,
   onGoBooking,
 }) => {
+  // View mode: 'checkout' | 'verifying' | 'success' | 'failed' | 'counter'
+  const [viewMode, setViewMode] = useState<'checkout' | 'verifying' | 'success' | 'failed' | 'counter'>('checkout');
+  const [activeReg, setActiveReg] = useState<Registration | null>(pendingReg);
+  const [confirmedData, setConfirmedData] = useState<any>(null);
+  const [failureMsg, setFailureMsg] = useState<string>('');
+
+  // Payment creation & gateway state
+  const [isCreatingOrder, setIsCreatingOrder] = useState<boolean>(false);
+  const [testModalOpen, setTestModalOpen] = useState<boolean>(false);
+  const [currentOrder, setCurrentOrder] = useState<any>(null);
+  const [verificationText, setVerificationText] = useState<string>('भुगतान सत्यापित किया जा रहा है...');
+
+  // Legacy manual UTR states
   const [utrNumber, setUtrNumber] = useState('');
   const [screenshotData, setScreenshotData] = useState('');
   const [copiedUpi, setCopiedUpi] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [activeReg, setActiveReg] = useState<Registration | null>(pendingReg);
+  const [showManualQr, setShowManualQr] = useState(false);
   const [zoomQr, setZoomQr] = useState(false);
+
+  // Success QR canvas ref
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // 5-minute temporary lock countdown timer
   const [remainingSeconds, setRemainingSeconds] = useState<number>(() => {
@@ -50,8 +69,9 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
   });
   const [isLockExpired, setIsLockExpired] = useState<boolean>(false);
 
+  // Timer countdown
   useEffect(() => {
-    if (!activeReg || activeReg.paymentStatus !== 'temp_hold') return;
+    if (viewMode === 'success' || !activeReg) return;
 
     const interval = setInterval(() => {
       if (!activeReg.expiresAt) return;
@@ -66,7 +86,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeReg]);
+  }, [activeReg, viewMode]);
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -78,8 +98,251 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
     if (pendingReg) {
       const liveMatch = allRegistrations.find((r) => r.token === pendingReg.token);
       setActiveReg(liveMatch || pendingReg);
+      if (liveMatch && liveMatch.paymentStatus === 'paid') {
+        setViewMode('success');
+      }
     }
   }, [pendingReg, allRegistrations]);
+
+  // Generate QR code onto canvas when entering success mode
+  useEffect(() => {
+    if (viewMode === 'success' && qrCanvasRef.current && confirmedData) {
+      const qrData =
+        confirmedData.qrCode ||
+        `BU2026|${confirmedData.bookingId || confirmedData.id}|${confirmedData.tokenNumber || confirmedData.token}|${confirmedData.eventDate || confirmedData.date}|KUND${confirmedData.kundNumber}|${confirmedData.mobile}`;
+
+      QRCode.toCanvas(
+        qrCanvasRef.current,
+        qrData,
+        {
+          width: 160,
+          margin: 1,
+          color: {
+            dark: '#4a0e17',
+            light: '#ffffff',
+          },
+        },
+        (err) => {
+          if (err) console.error('QR code generation error:', err);
+        }
+      );
+    }
+  }, [viewMode, confirmedData]);
+
+  // ----------------------------------------------------------------------
+  // Production Step 2: "भुगतान करें" click handler -> POST /api/payment/create-order
+  // ----------------------------------------------------------------------
+  const handleInitiatePayment = async () => {
+    if (!activeReg) return;
+    if (isLockExpired) {
+      alert('कुंड लॉक की समय सीमा (5 मिनट) समाप्त हो चुकी है। कृपया पुनः हवन कुंड चुनें।');
+      onGoBooking();
+      return;
+    }
+
+    setIsCreatingOrder(true);
+    setFailureMsg('');
+
+    try {
+      const res = await fetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: activeReg.fullName || activeReg.husbandName,
+          husbandName: activeReg.husbandName,
+          wifeName: activeReg.wifeName,
+          mobile: activeReg.mobile,
+          email: activeReg.email,
+          city: activeReg.city || 'नोएडा',
+          kundNumber: activeReg.kundNumber,
+          date: activeReg.date,
+          amount: activeReg.amount,
+          address: activeReg.address,
+          gotra: activeReg.gotra,
+        }),
+      });
+
+      const orderData = await res.json();
+      if (!res.ok) {
+        setFailureMsg(orderData.error || 'ऑर्डर बनाने में त्रुटि हुई।');
+        setIsCreatingOrder(false);
+        return;
+      }
+
+      setCurrentOrder(orderData);
+
+      // If in Sandbox Test Mode (gateway keys not yet configured in .env)
+      if (orderData.isTestMode) {
+        setIsCreatingOrder(false);
+        setTestModalOpen(true);
+        return;
+      }
+
+      // Live Razorpay Gateway Mode
+      if (typeof (window as any).Razorpay === 'undefined') {
+        throw new Error('पेमेंट गेटवे SDK लोड नहीं हो सका। कृपया पृष्ठ को रीलोड करें।');
+      }
+
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount * 100,
+        currency: orderData.currency || 'INR',
+        name: 'श्री महर्षि वेदविज्ञान संस्थान',
+        description: `भारत उत्कर्ष महायज्ञ 2026 • कुंड #${activeReg.kundNumber} दक्षिणा`,
+        image: '/MUMY LOGO 2.png',
+        order_id: orderData.orderId,
+        prefill: {
+          name: orderData.customer?.name || activeReg.fullName,
+          contact: orderData.customer?.mobile || activeReg.mobile,
+          email: orderData.customer?.email || activeReg.email || 'devotee@bharatutkarsh.org',
+        },
+        theme: {
+          color: '#8a1523',
+        },
+        modal: {
+          ondismiss: () => {
+            fetch('/api/payment/cancel', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ bookingId: orderData.bookingId }),
+            }).catch(() => {});
+            setIsCreatingOrder(false);
+          },
+        },
+        handler: async (paymentResponse: any) => {
+          // Never trust frontend success directly! Transition to verification mode
+          verifyPaymentOnBackend({
+            bookingId: orderData.bookingId,
+            razorpay_order_id: paymentResponse.razorpay_order_id,
+            razorpay_payment_id: paymentResponse.razorpay_payment_id,
+            razorpay_signature: paymentResponse.razorpay_signature,
+            isTestMode: false,
+          });
+        },
+      };
+
+      const rzpInstance = new (window as any).Razorpay(options);
+      rzpInstance.on('payment.failed', (failResp: any) => {
+        handlePaymentFailure(failResp?.error?.description || 'भुगतान असफल रहा');
+      });
+      rzpInstance.open();
+      setIsCreatingOrder(false);
+    } catch (err: any) {
+      console.error('Error initiating payment:', err);
+      setFailureMsg(err.message || 'भुगतान प्रारंभ करने में त्रुटि।');
+      setIsCreatingOrder(false);
+    }
+  };
+
+  // ----------------------------------------------------------------------
+  // Step 4 & 5: Backend Payment Verification (Never Trust Frontend Alone)
+  // ----------------------------------------------------------------------
+  const verifyPaymentOnBackend = async (payload: {
+    bookingId: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id: string;
+    razorpay_signature?: string;
+    isTestMode: boolean;
+  }) => {
+    setViewMode('verifying');
+    setVerificationText('भुगतान सत्यापित किया जा रहा है...');
+
+    try {
+      const res = await fetch('/api/payment/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        handlePaymentFailure(data.error || 'भुगतान सत्यापन असफल रहा।');
+        return;
+      }
+
+      // Success: Booking CONFIRMED, Token Generated, QR ready!
+      const confirmed = data.booking || activeReg;
+      setConfirmedData(confirmed);
+
+      // Synchronize into frontend registrations list
+      setRegistrations((prev) => {
+        const updatedItem: Registration = {
+          id: confirmed.bookingId || confirmed.id,
+          token: data.tokenNumber || confirmed.tokenNumber,
+          userId: confirmed.userId,
+          fullName: confirmed.name || confirmed.fullName,
+          husbandName: confirmed.name || confirmed.husbandName,
+          wifeName: confirmed.wifeName,
+          mobile: confirmed.mobile,
+          email: confirmed.email,
+          city: confirmed.city || 'नोएडा',
+          gotra: confirmed.gotra,
+          kundNumber: confirmed.kundNumber,
+          kundNumbers: [confirmed.kundNumber],
+          kundCount: 1,
+          date: confirmed.eventDate || confirmed.date,
+          timeSlot: 'प्रातः 09:00 AM',
+          participationType: 'दंपति',
+          personCount: 2,
+          amount: confirmed.amount,
+          paymentStatus: 'paid',
+          utrNumber: confirmed.paymentId || payload.razorpay_payment_id,
+          paymentDate: new Date().toISOString().slice(0, 10),
+          createdAt: confirmed.createdAt || new Date().toISOString(),
+          verificationHash: `GATEWAY-UPI-${confirmed.paymentId || payload.razorpay_payment_id}`,
+        };
+        const exists = prev.some((r) => r.token === updatedItem.token);
+        if (exists) {
+          return prev.map((r) => (r.token === updatedItem.token ? updatedItem : r));
+        }
+        return [updatedItem, ...prev];
+      });
+
+      setActiveReg({
+        ...activeReg!,
+        token: data.tokenNumber || confirmed.tokenNumber,
+        paymentStatus: 'paid',
+        utrNumber: confirmed.paymentId || payload.razorpay_payment_id,
+      });
+
+      setViewMode('success');
+    } catch (err: any) {
+      console.error('Error verifying payment:', err);
+      // Poll payment status as fallback before failing
+      pollPaymentStatus(payload.bookingId, payload.razorpay_order_id);
+    }
+  };
+
+  // Safe polling if network dropped during verification
+  const pollPaymentStatus = async (bookingId: string, orderId?: string) => {
+    setVerificationText('नेटवर्क जांच हो रही है... बैंक से अंतिम स्थिति प्राप्त की जा रही है...');
+    try {
+      const pollId = orderId || bookingId;
+      const res = await fetch(`/api/payment/status/${pollId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.bookingStatus === 'CONFIRMED' || data.paymentStatus === 'SUCCESS') {
+          setConfirmedData(data.booking);
+          setViewMode('success');
+          return;
+        }
+      }
+    } catch (e) {}
+
+    handlePaymentFailure('भुगतान सत्यापन का समय समाप्त हो गया। कृपया अपने बैंक खाते की जांच करें।');
+  };
+
+  const handlePaymentFailure = (reason: string) => {
+    setFailureMsg(reason);
+    setViewMode('failed');
+    if (currentOrder?.bookingId) {
+      fetch('/api/payment/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingId: currentOrder.bookingId }),
+      }).catch(() => {});
+    }
+  };
 
   const handleCopyUpi = () => {
     navigator.clipboard.writeText(systemSettings.upiId);
@@ -91,7 +354,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('फ़ाइल का आकार 5MB से कम होना चाहिए।');
+      setFailureMsg('फ़ाइल का आकार 5MB से कम होना चाहिए।');
       return;
     }
     const reader = new FileReader();
@@ -101,13 +364,14 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const handleSubmitProof = (isCounter = false) => {
+  // Legacy manual proof submit
+  const handleManualProofSubmit = (isCounter = false) => {
     if (!activeReg) return;
-    setErrorMsg('');
+    setFailureMsg('');
     if (!isCounter) {
       const cleanUtr = utrNumber.trim();
       if (cleanUtr.length !== 12 || !/^\d+$/.test(cleanUtr)) {
-        setErrorMsg('कृपया सही 12 अंकों का बैंक UPI Ref / UTR नंबर दर्ज करें।');
+        setFailureMsg('कृपया सही 12 अंकों का बैंक UPI Ref / UTR नंबर दर्ज करें।');
         return;
       }
     }
@@ -129,124 +393,241 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
       return [updatedReg, ...prev];
     });
 
-    // Synchronize to backend server database so it appears in Admin Portal on all devices
-    try {
-      fetch('/api/payment/submit-proof', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          registrationId: updatedReg.id,
-          token: updatedReg.token,
-          registration: updatedReg,
-          utrNumber: updatedReg.utrNumber,
-          paymentProofUrl: screenshotData || undefined,
-          isCounterPay: isCounter,
-        }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.registration) {
-            setActiveReg(data.registration);
-            setRegistrations((prev) =>
-              prev.map((r) => (r.token === data.registration.token ? data.registration : r))
-            );
-          }
-        })
-        .catch((err) => console.warn('Submit-proof background sync warning:', err));
-    } catch (e) {
-      console.warn('Network sync note:', e);
-    }
-
-    setAuditLogs((prev) => [
-      {
-        id: `audit-${Date.now()}`,
-        admin: 'SYSTEM',
-        action: isCounter ? 'COUNTER_PAY' : 'SUBMIT_PROOF',
+    fetch('/api/payment/submit-proof', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        registrationId: updatedReg.id,
         token: updatedReg.token,
-        kund: updatedReg.kundNumber,
-        timestamp: new Date().toISOString(),
-        reason: isCounter ? 'यज्ञ स्थल काउंटर नकद विकल्प' : `UTR ${utrNumber.trim()} प्रस्तुत किया गया`,
-      },
-      ...prev,
-    ]);
+        registration: updatedReg,
+        utrNumber: updatedReg.utrNumber,
+        paymentProofUrl: screenshotData || undefined,
+        isCounterPay: isCounter,
+      }),
+    }).catch(() => {});
+
+    if (isCounter) {
+      setViewMode('counter');
+    } else {
+      setViewMode('checkout');
+    }
   };
 
-  // CASE 1: APPROVED BY ADMIN (PAYMENT VERIFIED)
-  if (activeReg && (activeReg.paymentStatus === 'paid' as any)) {
-    const kundFormatted =
-      activeReg.kundNumbers && activeReg.kundNumbers.length > 0
-        ? activeReg.kundNumbers.map((n) => `#${String(n).padStart(3, '0')}`).join(', ')
-        : `#${String(activeReg.kundNumber).padStart(3, '0')}`;
+  const amount = activeReg?.amount || 2100;
+  const kundNumber = activeReg?.kundNumber || 10;
+  const formattedKund = `#${String(kundNumber).padStart(3, '0')}`;
+
+  // ======================================================================
+  // VIEW: 1. VERIFYING PAYMENT STATE
+  // ======================================================================
+  if (viewMode === 'verifying') {
+    return (
+      <div className="max-w-2xl mx-auto px-3 sm:px-4 pt-8 pb-12 text-center animate-in fade-in">
+        <div className="bg-white rounded-3xl shadow-xl border-2 border-amber-400 p-6 sm:p-10 space-y-5">
+          <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-4 border-amber-200 border-t-[#8a1523] animate-spin" />
+            <Clock className="w-8 h-8 text-[#8a1523] animate-pulse" />
+          </div>
+          <div>
+            <span className="text-xs uppercase font-extrabold text-amber-900 bg-amber-100 px-3.5 py-1.5 rounded-full border border-amber-300">
+              सुरक्षित सत्यापन प्रक्रिया
+            </span>
+            <h2 className="text-xl sm:text-2xl font-bold font-serif text-stone-900 mt-3 mb-1">
+              {verificationText}
+            </h2>
+            <p className="text-xs sm:text-sm text-stone-600 max-w-md mx-auto leading-relaxed">
+              कृपया इस विंडो को बंद अथवा रीफ्रेश न करें। पेमेंट गेटवे एवं बैंक द्वारा आपकी दक्षिणा का डिजिटल सत्यापन किया जा रहा है।
+            </p>
+          </div>
+          <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-2xl text-xs text-amber-950 font-medium">
+            🔒 आपका हवन कुंड <strong className="text-[#8a1523]">{formattedKund}</strong> सुरक्षित लॉक है। सत्यापन पूर्ण होते ही आधिकारिक टोकन पास जारी होगा।
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ======================================================================
+  // VIEW: 2. PAYMENT FAILURE STATE (Requirement 11)
+  // ======================================================================
+  if (viewMode === 'failed') {
+    return (
+      <div className="max-w-2xl mx-auto px-3 sm:px-4 pt-6 pb-12 text-center animate-in fade-in">
+        <div className="bg-white rounded-3xl shadow-xl border-2 border-rose-400 p-6 sm:p-10 space-y-5">
+          <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto text-rose-700 shadow-inner">
+            <XCircle className="w-10 h-10 text-rose-600" />
+          </div>
+          <div>
+            <span className="text-xs uppercase font-extrabold text-rose-900 bg-rose-100 px-3.5 py-1 rounded-full border border-rose-300">
+              Payment Failed
+            </span>
+            <h2 className="text-xl sm:text-3xl font-bold font-serif text-rose-800 mt-2 mb-1">
+              भुगतान असफल
+            </h2>
+            <p className="text-sm sm:text-base font-semibold text-stone-700 mt-1">
+              आपका भुगतान पूरा नहीं हुआ। कृपया पुनः प्रयास करें।
+            </p>
+          </div>
+
+          {failureMsg && (
+            <div className="p-4 bg-rose-50 border border-rose-300 rounded-2xl text-xs text-rose-950 text-left font-medium">
+              <strong>त्रुटि विवरण:</strong> {failureMsg}
+            </div>
+          )}
+
+          <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600">
+            हवन कुंड की सुरक्षा हेतु लॉक मुक्त कर दिया गया है। यदि आपके बैंक खाते से राशि कट गई है, तो वह बैंक नियमानुसार स्वतः वापस आ जाएगी अथवा आश्रम से संपर्क करें।
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => {
+                setViewMode('checkout');
+                setFailureMsg('');
+              }}
+              className="w-full sm:w-auto px-6 py-3 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer transition-all"
+            >
+              पुनः भुगतान का प्रयास करें
+            </button>
+            <button
+              onClick={onGoBooking}
+              className="w-full sm:w-auto px-5 py-3 bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-xs sm:text-sm rounded-xl border border-stone-300 cursor-pointer"
+            >
+              दूसरा कुंड चुनें
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ======================================================================
+  // VIEW: 3. PAYMENT SUCCESS STATE (Requirement 10)
+  // ======================================================================
+  if (viewMode === 'success' && (confirmedData || activeReg)) {
+    const data = confirmedData || activeReg;
+    const token = data.tokenNumber || data.token || 'BU2026-CONFIRMED';
+    const devoteeName = data.name || data.fullName || data.husbandName;
+    const bookingId = data.bookingId || data.id || 'BU2026-BKG';
+    const paymentId = data.paymentId || data.utrNumber || 'GATEWAY-UPI';
+    const eventDate = data.eventDate || data.date;
+    const totalPaid = data.amount || amount;
 
     return (
-      <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 text-center">
-        <div className="bg-white rounded-2xl sm:rounded-3xl shadow-md border-2 border-emerald-400 p-4 sm:p-8 animate-in fade-in">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 text-2xl sm:text-3xl mx-auto mb-3 shadow-inner">
-            ✓
-          </div>
-          <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs uppercase font-extrabold text-emerald-800 bg-emerald-50 px-3 sm:px-4 py-1.5 rounded-full border border-emerald-300 mb-2 max-w-full">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="truncate">Payment Verified (भुगतान सत्यापित एवं पुष्ट)</span>
-          </div>
-          <h2 className="text-lg min-[360px]:text-xl sm:text-3xl font-bold font-serif text-stone-900 mt-2 mb-1 leading-snug">
-            बधाई हो! आपकी हवन कुंड बुकिंग पूर्णतः स्वीकृत हो चुकी है
-          </h2>
-          <p className="text-xs sm:text-sm text-stone-600 max-w-lg mx-auto mb-5 sm:mb-6">
-            महर्षि आश्रम प्रशासन द्वारा आपका भुगतान सत्यापित कर दिया गया है। आपकी आधिकारिक रसीद एवं टोकन पास सक्रिय हो गया है।
-          </p>
-
-          <div className="max-w-md mx-auto bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 sm:p-5 mb-5 sm:mb-6 text-center shadow-xs">
-            <div className="text-[11px] sm:text-xs font-bold text-amber-900 uppercase tracking-wider mb-1">
-              आधिकारिक सत्यापित टोकन संख्या
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 pb-12 animate-in fade-in">
+        <div className="bg-white rounded-3xl shadow-xl border-2 border-emerald-400 p-5 sm:p-8">
+          <div className="text-center space-y-2 pb-5 border-b border-stone-200">
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 text-3xl mx-auto shadow-inner">
+              ✓
             </div>
-            <div className="font-mono font-black text-xl min-[360px]:text-2xl sm:text-3xl text-[#872e18] break-all">
-              {activeReg.token}
+            <div className="inline-flex items-center gap-1.5 text-xs uppercase font-extrabold text-emerald-800 bg-emerald-50 px-4 py-1.5 rounded-full border border-emerald-300">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>भुगतान सफल (Payment Verified & Confirmed)</span>
             </div>
-            <div className="mt-2 text-xs font-bold text-emerald-900 bg-emerald-100 px-3 py-1 rounded-lg border border-emerald-300 inline-block max-w-full">
-              {activeReg.kundCount || 1} कुंड ({kundFormatted}) • {activeReg.date} • प्रातः 09:00 AM
-            </div>
+            <h1 className="text-2xl sm:text-4xl font-bold font-serif text-stone-900">
+              बधाई हो! आपका हवन कुंड सफलतापूर्वक आरक्षित हो गया है
+            </h1>
+            <p className="text-xs sm:text-sm text-stone-600 max-w-lg mx-auto">
+              गेटवे एवं बैंक द्वारा आपका भुगतान पूर्णतः सत्यापित हो गया है। आपका आधिकारिक टोकन व प्रवेश पास सक्रिय हो चुका है।
+            </p>
           </div>
 
-          <div className="my-5 sm:my-6 grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 bg-stone-50 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-stone-200 text-left text-xs">
-            <div>
-              <span className="text-stone-500 font-bold block text-[10px] min-[360px]:text-[11px]">यजमान</span>
-              <span className="font-bold text-stone-900 break-words">{activeReg.fullName || activeReg.husbandName}</span>
+          {/* Golden Token & QR Section */}
+          <div className="my-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 sm:p-6 shadow-xs">
+            <div className="md:col-span-2 space-y-2 text-center md:text-left">
+              <div className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+                आधिकारिक डिजिटल टोकन संख्या (Token Number)
+              </div>
+              <div className="font-mono font-black text-2xl sm:text-4xl text-[#872e18] break-all">
+                {token}
+              </div>
+              <div className="inline-flex items-center gap-2 mt-1 text-xs font-bold text-emerald-900 bg-emerald-100 px-3 py-1 rounded-lg border border-emerald-300">
+                <span>हवन कुंड {formattedKund}</span>
+                <span>•</span>
+                <span>{eventDate}</span>
+                <span>•</span>
+                <span>प्रातः 09:00 AM</span>
+              </div>
             </div>
-            <div>
-              <span className="text-stone-500 font-bold block text-[10px] min-[360px]:text-[11px]">WhatsApp / मोबाइल</span>
-              <span className="font-mono font-bold text-stone-900">+91 {activeReg.mobile}</span>
-            </div>
-            <div>
-              <span className="text-stone-500 font-bold block text-[10px] min-[360px]:text-[11px]">सत्यापित दक्षिणा</span>
-              <span className="font-bold text-[#872e18]">₹ {Number(activeReg.amount).toLocaleString('en-IN')} (सहयोग दक्षिणा)</span>
-            </div>
-            <div>
-              <span className="text-stone-500 font-bold block text-[10px] min-[360px]:text-[11px]">बैंक UTR</span>
-              <span className="font-mono font-bold text-stone-900 break-all">{activeReg.utrNumber || 'N/A'}</span>
+
+            {/* QR Code Canvas */}
+            <div className="flex flex-col items-center justify-center bg-white p-3 rounded-2xl border-2 border-stone-200 shadow-sm">
+              <canvas ref={qrCanvasRef} className="rounded-lg max-w-[140px] max-h-[140px]" />
+              <span className="text-[10px] font-bold text-stone-500 mt-1 uppercase tracking-wider">
+                स्कैन सत्यापन कोड (Scan QR)
+              </span>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3">
+          {/* Complete Booking Details Grid (Requirement 10) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 bg-stone-50 p-4 sm:p-5 rounded-2xl border border-stone-200 text-xs">
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">पंजीकरण नाम (Name)</span>
+              <span className="font-bold text-stone-900 text-sm break-words">{devoteeName}</span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">मोबाइल नंबर (Mobile)</span>
+              <span className="font-mono font-bold text-stone-900 text-sm">+91 {data.mobile}</span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">कार्यक्रम की तारीख (Date)</span>
+              <span className="font-bold text-stone-900 text-sm">{eventDate} (प्रातः 09:00 AM)</span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">कुंड संख्या (Kund #)</span>
+              <span className="font-bold text-[#8a1523] text-sm">{formattedKund} (1 कुंड)</span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">Booking ID</span>
+              <span className="font-mono font-bold text-stone-900 break-all text-[11px] sm:text-xs">{bookingId}</span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">Payment ID / UTR</span>
+              <span className="font-mono font-bold text-emerald-800 break-all text-[11px] sm:text-xs">{paymentId}</span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">भुगतान राशि (Amount)</span>
+              <span className="font-bold text-[#872e18] text-sm">₹ {Number(totalPaid).toLocaleString('en-IN')} (सफल)</span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">बुकिंग स्थिति (Status)</span>
+              <span className="inline-block px-2.5 py-0.5 rounded-full font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px]">
+                ✓ CONFIRMED (पुष्ट)
+              </span>
+            </div>
+            <div>
+              <span className="text-stone-500 font-bold block text-[11px]">यज्ञ स्थल</span>
+              <span className="font-semibold text-stone-700 text-[11px]">रामलीला मैदान, महर्षि आश्रम, सेक्टर-110, नोएडा</span>
+            </div>
+          </div>
+
+          {/* Action Buttons (Requirement 10) */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <button
-              onClick={() => onOpenSlip(activeReg)}
-              className="w-full sm:w-auto px-5 sm:px-6 py-3 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
+              onClick={() => onOpenSlip(activeReg || data)}
+              className="w-full sm:w-auto px-6 py-3.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
+            >
+              <FileText className="w-4 h-4 text-white shrink-0" />
+              <span>[ टिकट / रसीद देखें ]</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="w-full sm:w-auto px-5 py-3.5 bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
             >
               <Printer className="w-4 h-4 text-white shrink-0" />
-              <span>आधिकारिक रसीद व प्रवेश पास देखें / PDF प्रिंट करें</span>
+              <span>[ प्रिंट करें ]</span>
             </button>
             <a
-              href={getWhatsAppSendUrl(activeReg.mobile, activeReg)}
+              href={getWhatsAppSendUrl(data.mobile, activeReg || data)}
               target="_blank"
               rel="noreferrer"
-              className="w-full sm:w-auto px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
-              title="पंजीकृत मोबाइल पर WhatsApp संदेश प्राप्त करें"
+              className="w-full sm:w-auto px-5 py-3.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
             >
-              <span className="text-base leading-none">📲</span>
-              <span>WhatsApp पर पास प्राप्त करें</span>
+              <span>📲 WhatsApp पर पास प्राप्त करें</span>
             </a>
             <button
               onClick={onGoHome}
-              className="w-full sm:w-auto px-5 py-3 bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-xs sm:text-sm rounded-xl border border-stone-300 cursor-pointer"
+              className="w-full sm:w-auto px-5 py-3.5 bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-xs sm:text-sm rounded-xl border border-stone-300 cursor-pointer"
             >
               मुख्य पृष्ठ
             </button>
@@ -256,225 +637,32 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
     );
   }
 
-  // CASE 2: REJECTED BY ADMIN (PAYMENT REJECTED)
-  if (activeReg && (activeReg.paymentStatus === 'rejected' as any)) {
+  // ======================================================================
+  // VIEW: 4. COUNTER PAY SCREEN
+  // ======================================================================
+  if (viewMode === 'counter' && activeReg) {
     return (
-      <div className="max-w-2xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 text-center">
-        <div className="bg-white rounded-2xl sm:rounded-3xl shadow-md border-2 border-rose-400 p-4 sm:p-8 animate-in fade-in">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 bg-rose-100 rounded-full flex items-center justify-center text-rose-700 mx-auto mb-3 shadow-inner">
-            <span className="text-xl sm:text-2xl font-bold">✕</span>
+      <div className="max-w-2xl mx-auto px-3 sm:px-4 pt-6 pb-12 text-center animate-in fade-in">
+        <div className="bg-white rounded-3xl shadow-xl border-2 border-blue-400 p-6 sm:p-10 space-y-4">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 mx-auto">
+            <CheckCircle2 className="w-8 h-8 text-blue-600" />
           </div>
-          <div className="inline-flex items-center gap-1.5 text-xs uppercase font-extrabold tracking-wider text-rose-900 bg-rose-100 px-3.5 py-1.5 rounded-full border border-rose-300 mb-2">
-            <span>Payment Rejected (भुगतान अस्वीकृत)</span>
-          </div>
-          <h2 className="text-lg sm:text-2xl font-bold font-serif text-stone-900 mt-2 mb-2 leading-snug">
-            भुगतान सत्यापन अस्वीकृत कर दिया गया है
-          </h2>
-          <p className="text-xs sm:text-sm text-stone-600 max-w-md mx-auto mb-5">
-            आश्रम व्यवस्थापक द्वारा बैंक खाते से मिलान करने पर आपका UTR अथवा दक्षिणा विवरण अमान्य पाया गया है। अतः यह पंजीकरण स्थायी नहीं हो सका है।
-          </p>
-
-          <div className="p-3.5 sm:p-4 bg-rose-50 border border-rose-300 rounded-xl sm:rounded-2xl text-xs text-rose-950 mb-5 sm:mb-6 text-left space-y-1">
-            <div className="font-bold text-rose-900">अस्वीकृति का कारण:</div>
-            <div>{activeReg.rejectionReason || 'बैंक खाते में दक्षिणा राशि अप्राप्त अथवा अमान्य UTR नंबर।'}</div>
-            <div className="text-[11px] text-stone-500 pt-1 font-mono break-all">
-              जमा UTR: {activeReg.utrNumber || 'N/A'} • संदर्भ: {activeReg.token}
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3">
-            <button
-              onClick={() => {
-                setActiveReg({
-                  ...activeReg,
-                  paymentStatus: 'temp_hold',
-                });
-              }}
-              className="w-full sm:w-auto px-5 sm:px-6 py-3 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer"
-            >
-              सही UTR व स्क्रीनशॉट पुनः प्रस्तुत करें
-            </button>
-            <button
-              onClick={onGoBooking}
-              className="w-full sm:w-auto px-5 py-3 bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-xs sm:text-sm rounded-xl border border-stone-300 cursor-pointer"
-            >
-              नया आरक्षण करें
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // CASE 3: PENDING ADMIN APPROVAL (PAYMENT PENDING VERIFICATION)
-  if (activeReg && (activeReg.paymentStatus === 'pending' as any)) {
-    const kundFormatted =
-      activeReg.kundNumbers && activeReg.kundNumbers.length > 0
-        ? activeReg.kundNumbers.map((n) => `#${String(n).padStart(3, '0')}`).join(', ')
-        : `#${String(activeReg.kundNumber).padStart(3, '0')}`;
-
-    return (
-      <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6">
-        <div className="bg-white rounded-2xl sm:rounded-3xl shadow-md border-2 border-amber-400 p-4 sm:p-8 animate-in fade-in">
-          <div className="text-center space-y-2.5 sm:space-y-3 pb-5 sm:pb-6 border-b border-stone-200">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 mx-auto shadow-inner">
-              <Clock className="w-7 h-7 sm:w-8 sm:h-8 animate-pulse text-amber-700" />
-            </div>
-            <div className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs uppercase font-extrabold tracking-wider text-amber-900 bg-amber-100 px-3 sm:px-4 py-1.5 rounded-full border border-amber-300 max-w-full">
-              <Clock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-              <span className="truncate">Payment Pending Verification (भुगतान सत्यापन लंबित)</span>
-            </div>
-            <h2 className="text-lg sm:text-2xl font-bold font-serif text-stone-900 leading-snug">
-              भुगतान विवरण प्राप्त हुआ • व्यवस्थापक सत्यापन प्रतीक्षित
-            </h2>
-            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-3 text-xs text-amber-950 font-medium max-w-lg mx-auto leading-relaxed text-left sm:text-center">
-              ⚠️ <strong>महत्वपूर्ण निर्देश:</strong> आपका पंजीकरण संदर्भ सुरक्षित हो चुका है। <strong>आश्रम व्यवस्थापक (Admin) द्वारा बैंक खाते से UTR मिलान करने के बाद ही यह आधिकारिक रूप से पुष्ट (CONFIRMED) होगा। तब तक यह टोकन अंतिम प्रवेश पास नहीं है।</strong>
-            </div>
-          </div>
-
-          <div className="my-5 sm:my-6 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 bg-[#fdfaf4] p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-amber-200 text-xs">
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">पंजीकरण संदर्भ सं. (Reference ID)</span>
-              <span className="font-mono font-bold text-sm sm:text-base text-[#872e18] break-all">{activeReg.token}</span>
-              <span className="text-[10px] text-amber-800 font-bold block">(सत्यापन उपरांत अंतिम टोकन पुष्ट होगा)</span>
-            </div>
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">यज्ञ तिथि एवं समय</span>
-              <span className="font-bold text-stone-900 text-xs sm:text-sm">{activeReg.date} • 9:00 AM (प्रातः 09:00 AM)</span>
-            </div>
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">मुख्य यजमान</span>
-              <span className="font-bold text-stone-900 text-xs sm:text-sm break-words">{activeReg.fullName || activeReg.husbandName}</span>
-            </div>
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">पंजीकृत WhatsApp/मोबाइल</span>
-              <span className="font-mono font-bold text-stone-900 text-xs sm:text-sm">+91 {activeReg.mobile}</span>
-            </div>
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">हवन कुंड संख्या एवं मात्रा</span>
-              <span className="font-bold text-stone-900 text-xs sm:text-sm">
-                {activeReg.kundCount || 1} कुंड ({kundFormatted})
-              </span>
-            </div>
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">कुल देय दक्षिणा (Total Amount)</span>
-              <span className="font-bold text-[#872e18] text-xs sm:text-sm">
-                ₹ {Number(activeReg.amount).toLocaleString('en-IN')} ({activeReg.kundCount || 1} कुंड • सहयोग दक्षिणा)
-              </span>
-            </div>
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">प्रस्तुत बैंक UTR नंबर</span>
-              <span className="font-mono font-bold text-stone-900 text-xs sm:text-sm break-all">{activeReg.utrNumber}</span>
-            </div>
-            <div>
-              <span className="font-bold text-stone-500 uppercase block text-[10px] min-[360px]:text-[11px]">सत्यापन स्थिति (Status)</span>
-              <span className="inline-block mt-0.5 px-2.5 py-0.5 rounded-full text-[10px] min-[360px]:text-[11px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
-                ⏳ Payment Pending Verification
-              </span>
-            </div>
-          </div>
-
-          {activeReg.paymentProofUrl && (
-            <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl sm:rounded-2xl mb-5 sm:mb-6 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                <img
-                  src={activeReg.paymentProofUrl}
-                  alt="Payment Receipt"
-                  className="w-12 h-12 object-cover rounded-lg border border-stone-300 shrink-0"
-                />
-                <div className="text-xs min-w-0">
-                  <span className="font-bold text-stone-900 block truncate">भुगतान स्क्रीनशॉट संलग्न है</span>
-                  <span className="text-[11px] text-stone-500 block truncate">व्यवस्थापक मिलान हेतु उपलब्ध</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const win = window.open();
-                  if (win && activeReg.paymentProofUrl) win.document.write(`<img src="${activeReg.paymentProofUrl}" style="max-width:100%; height:auto;" />`);
-                }}
-                className="text-xs font-bold text-[#8a1523] hover:underline cursor-pointer shrink-0"
-              >
-                बड़ा करके देखें 🔍
-              </button>
-            </div>
-          )}
-
-          {/* DEDICATED WHATSAPP NOTIFICATION BOX */}
-          <div className="p-3.5 sm:p-4 bg-emerald-50 border-2 border-emerald-300 rounded-xl sm:rounded-2xl text-xs text-emerald-950 space-y-1.5 mb-5 sm:mb-6 shadow-2xs">
-            <div className="font-bold flex items-center gap-2 text-emerald-900 text-xs sm:text-sm">
-              <span className="text-base sm:text-lg">📲</span>
-              <span>WhatsApp पर स्वचालित टोकन एवं विवरण प्रेषण:</span>
-            </div>
-            <p className="text-[11px] sm:text-xs text-emerald-900/90 leading-relaxed">
-              जैसे ही आश्रम व्यवस्थापक द्वारा बैंक खाते से आपके UTR का मिलान पूर्ण होगा, आपका <strong>पुष्ट आधिकारिक टोकन नंबर, हवन कुंड संख्या ({kundFormatted}), समय (9:00 AM) एवं सम्पूर्ण प्रवेश विवरण आपके पंजीकृत मोबाइल नंबर (+91 {activeReg.mobile}) पर WhatsApp द्वारा स्वतः भेज दिए जाएंगे।</strong>
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 sm:gap-3">
-            <button
-              onClick={async () => {
-                try {
-                  const res = await fetch('/api/registrations/lookup', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: activeReg.token, mobile: activeReg.mobile }),
-                  });
-                  if (res.ok) {
-                    const data = await res.json();
-                    if (data && data.result) {
-                      setActiveReg(data.result);
-                      setRegistrations((prev) =>
-                        prev.map((r) => (r.token === data.result.token ? data.result : r))
-                      );
-                      return;
-                    }
-                  }
-                } catch (e) {}
-                const refreshed = allRegistrations.find((r) => r.token === activeReg.token);
-                if (refreshed) setActiveReg(refreshed);
-              }}
-              className="w-full sm:w-auto px-5 sm:px-6 py-3 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs flex items-center justify-center gap-2 cursor-pointer transition-all"
-            >
-              <RefreshCw className="w-4 h-4 text-white shrink-0" />
-              <span>सत्यापन स्थिति जांचें (रिफ्रेश)</span>
-            </button>
-            <button
-              onClick={onGoHome}
-              className="w-full sm:w-auto px-5 py-3 bg-stone-100 hover:bg-stone-200 text-stone-800 font-semibold text-xs sm:text-sm rounded-xl border border-stone-300 cursor-pointer"
-            >
-              मुख्य पृष्ठ पर लौटें
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // CASE 4: COUNTER PAY OPTION
-  if (activeReg && activeReg.paymentStatus === 'counter_pay') {
-    return (
-      <div className="max-w-2xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 text-center">
-        <div className="bg-white rounded-2xl sm:rounded-3xl shadow-md border-2 border-blue-400 p-4 sm:p-8">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 mx-auto mb-3">
-            <CheckCircle2 className="w-7 h-7 sm:w-8 sm:h-8 text-blue-600" />
-          </div>
-          <h2 className="text-lg sm:text-2xl font-bold font-serif text-stone-900 mb-2 leading-snug">
+          <h2 className="text-xl sm:text-2xl font-bold font-serif text-stone-900">
             काउंटर भुगतान आरक्षण सुरक्षित
           </h2>
-          <p className="text-xs sm:text-sm text-stone-600 mb-5 sm:mb-6">
-            आपका संदर्भ <strong className="break-all">{activeReg.token}</strong> आरक्षित है। कृपया यज्ञ दिवस पर आश्रम गेट सं. 5 के काउंटर पर नकद दक्षिणा देकर अंतिम रसीद प्राप्त करें।
+          <p className="text-xs sm:text-sm text-stone-600">
+            आपका संदर्भ <strong className="font-mono text-[#8a1523]">{activeReg.token}</strong> आरक्षित है। कृपया यज्ञ दिवस पर आश्रम गेट सं. 5 के काउंटर पर नकद दक्षिणा देकर अंतिम रसीद प्राप्त करें।
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-2.5 sm:gap-3">
+          <div className="flex flex-col sm:flex-row justify-center gap-3 pt-2">
             <button
               onClick={() => onOpenSlip(activeReg)}
-              className="w-full sm:w-auto px-6 py-3 bg-[#8a1523] text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs cursor-pointer"
+              className="px-6 py-3 bg-[#8a1523] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer"
             >
               काउंटर पर्ची देखें / प्रिंट करें
             </button>
             <button
               onClick={onGoHome}
-              className="w-full sm:w-auto px-5 py-3 bg-stone-100 text-stone-800 font-semibold text-xs sm:text-sm rounded-xl border border-stone-300 cursor-pointer"
+              className="px-5 py-3 bg-stone-100 text-stone-800 font-semibold text-xs sm:text-sm rounded-xl border border-stone-300 cursor-pointer"
             >
               मुख्य पृष्ठ
             </button>
@@ -484,23 +672,17 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
     );
   }
 
-  // CASE 5: PAYMENT SUBMISSION FORM (Showing official SBI QR.jpg image)
-  const kundCount = activeReg?.kundCount || 1;
-  const amount = activeReg?.amount || 2100;
-  const kundFormatted =
-    activeReg?.kundNumbers && activeReg.kundNumbers.length > 0
-      ? activeReg.kundNumbers.map((n) => `#${String(n).padStart(3, '0')}`).join(', ')
-      : `#${String(activeReg?.kundNumber || 10).padStart(3, '0')}`;
-
+  // ======================================================================
+  // VIEW: 5. MAIN PRODUCTION PAYMENT FLOW (CHECKOUT)
+  // ======================================================================
   return (
-    <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6">
-      {/* Previous Arrow Button */}
-      <div className="mb-3.5 flex items-center justify-between gap-2">
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 pt-4 sm:pt-6 pb-12">
+      {/* Previous Arrow Navigation */}
+      <div className="mb-4 flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={onGoBooking}
           className="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-amber-100 text-[#872e18] border border-amber-300 rounded-xl text-xs sm:text-sm font-bold shadow-2xs transition-all cursor-pointer group"
-          title="हवन कुंड, यज्ञ तिथि अथवा यजमान विवरण बदलने हेतु वापस जाएं"
         >
           <ArrowLeft className="w-4 h-4 text-[#8a1523] group-hover:-translate-x-1 transition-transform" />
           <span>← पिछला चरण (हवन कुंड या विवरण बदलें)</span>
@@ -514,37 +696,40 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-sm border border-[#e8ddcb] p-4 sm:p-8">
-        <div className="border-b border-stone-200 pb-4 mb-5 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white rounded-3xl shadow-md border border-[#e8ddcb] p-4 sm:p-8">
+        {/* Header Summary */}
+        <div className="border-b border-stone-200 pb-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <div className="inline-flex flex-wrap items-center gap-1 text-[10px] min-[360px]:text-[11px] font-bold text-[#8a1523] bg-amber-100 px-2.5 py-1 rounded-xl mb-1 border border-amber-300 max-w-full">
+            <div className="inline-flex flex-wrap items-center gap-1.5 text-xs font-bold text-[#8a1523] bg-amber-100 px-3 py-1 rounded-xl mb-1.5 border border-amber-300">
               <span>यज्ञ तिथि: {activeReg?.date}</span>
               <span>•</span>
               <span>समय: प्रातः 09:00 AM</span>
               <span>•</span>
-              <span>{kundCount} हवन कुंड ({kundFormatted})</span>
+              <span>हवन कुंड {formattedKund}</span>
             </div>
-            <h2 className="text-lg sm:text-2xl font-bold font-serif text-stone-900 leading-snug">
-              सुरक्षित यू.पी.आई. दक्षिणा भुगतान (QR Scan & Pay)
+            <h2 className="text-xl sm:text-2xl font-bold font-serif text-stone-900 leading-snug">
+              सुरक्षित UPI ऑनलाइन भुगतान एवं कुंड आरक्षण
             </h2>
             <p className="text-xs sm:text-sm text-stone-600 mt-0.5">
-              आधिकारिक SBI QR कोड स्कैन करें और भुगतान उपरांत 12 अंकों का UTR नंबर दर्ज करें।
+              Google Pay, PhonePe, Paytm, BHIM अथवा किसी भी UPI ऐप से तुरंत भुगतान करें।
             </p>
           </div>
-          <div className="text-left sm:text-right bg-amber-50 sm:bg-transparent p-3 sm:p-0 rounded-2xl border sm:border-0 border-amber-200">
+          <div className="bg-amber-50 sm:bg-transparent p-3 sm:p-0 rounded-2xl border sm:border-0 border-amber-200 text-left sm:text-right">
             <span className="text-xs font-bold text-stone-500 uppercase tracking-wider block">
               कुल देय दक्षिणा
             </span>
-            <span className="text-2xl sm:text-3xl font-black text-[#872e18]">₹ {Number(amount).toLocaleString('en-IN')}</span>
+            <span className="text-2xl sm:text-3xl font-black text-[#872e18]">
+              ₹ {Number(amount).toLocaleString('en-IN')}
+            </span>
             <span className="text-[11px] font-bold text-stone-600 block">
-              ({kundCount} हवन कुंड • सहयोग दक्षिणा)
+              (1 हवन कुंड • सहयोग दक्षिणा)
             </span>
           </div>
         </div>
 
-        {/* 5-MINUTE REAL-TIME LOCK COUNTDOWN BANNER */}
+        {/* 5-MINUTE REAL-TIME LOCK COUNTDOWN BANNER (Section 1 in prompt) */}
         <div
-          className={`p-3.5 sm:p-4 rounded-2xl border-2 mb-5 transition-all shadow-xs ${
+          className={`p-4 rounded-2xl border-2 mb-6 transition-all shadow-xs ${
             isLockExpired
               ? 'bg-rose-50 border-rose-400 text-rose-950'
               : remainingSeconds <= 60
@@ -553,7 +738,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
           }`}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               <div
                 className={`w-10 h-10 rounded-xl flex items-center justify-center font-black shrink-0 ${
                   isLockExpired ? 'bg-rose-200 text-rose-800' : 'bg-amber-200 text-amber-900'
@@ -562,11 +747,11 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
                 {isLockExpired ? '⏱️' : '🔒'}
               </div>
               <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                  <span>रियल-टाइम कुंड आरक्षण लॉक (5-Minute Lock)</span>
+                <div className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-2">
+                  <span>रियल-टाइम कुंड आरक्षण लॉक (Temporary Kund Lock)</span>
                   {!isLockExpired && (
                     <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold border border-emerald-300">
-                      सक्रिय
+                      सुरक्षित
                     </span>
                   )}
                 </div>
@@ -577,17 +762,17 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
                     </span>
                   ) : (
                     <span>
-                      हवन कुंड <strong className="text-[#8a1523]">{kundFormatted}</strong> आपके लिए 5 मिनट हेतु सुरक्षित लॉक है।
+                      हवन कुंड <strong className="text-[#8a1523]">{formattedKund}</strong> आपके भुगतान सत्र हेतु 5 मिनट के लिए सुरक्षित लॉक है।
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="text-left sm:text-right bg-white px-3.5 py-1.5 rounded-xl border border-stone-200 shadow-2xs shrink-0 self-start sm:self-auto">
-              <div className="text-[10px] font-bold text-stone-500 uppercase">शेष समय (Time Left)</div>
+            <div className="text-left sm:text-right bg-white px-4 py-2 rounded-xl border border-stone-200 shadow-2xs shrink-0 self-start sm:self-auto">
+              <div className="text-[10px] font-bold text-stone-500 uppercase">शेष समय (Lock Expires In)</div>
               <div
-                className={`font-mono text-xl sm:text-2xl font-black ${
+                className={`font-mono text-2xl font-black ${
                   isLockExpired
                     ? 'text-rose-600'
                     : remainingSeconds <= 60
@@ -626,194 +811,239 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
           )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 items-start">
-          {/* Left: Official QR.jpg Display */}
-          <div className="flex flex-col items-center justify-center p-3.5 sm:p-4 bg-[#faf5eb] rounded-2xl sm:rounded-3xl border-2 border-amber-300 text-center shadow-xs w-full">
-            <div 
-              className="relative max-w-[240px] sm:max-w-[280px] w-full bg-white p-2 rounded-2xl border-2 border-stone-300 shadow-lg cursor-pointer hover:shadow-xl transition-all group overflow-hidden"
-              onClick={() => setZoomQr(true)}
-              title="बड़ा करके देखने हेतु क्लिक करें"
-            >
-              <img
-                src="QR.jpg"
-                alt="श्री महर्षि वेदविज्ञान संस्थान आधिकारिक SBI UPI QR कोड"
-                className="w-full h-auto object-contain rounded-xl mx-auto block"
-              />
-              <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity">
-                <span>🔍 बड़ा करके देखें (Click to Zoom)</span>
-              </div>
-            </div>
+        {/* Error Notice */}
+        {failureMsg && (
+          <div className="p-3.5 bg-rose-50 border border-rose-300 text-rose-800 text-xs rounded-xl font-medium mb-5">
+            ⚠️ {failureMsg}
+          </div>
+        )}
 
-            <div className="text-xs font-bold text-stone-900 mt-3 mb-1">
-              आधिकारिक SBI UPI QR कोड (Scan & Pay)
-            </div>
-
-            <div className="flex items-center justify-center gap-2 mt-1 bg-white px-2.5 sm:px-3 py-1.5 rounded-xl border border-stone-300 text-xs font-mono font-bold text-stone-800 shadow-2xs max-w-full">
-              <span className="truncate max-w-[190px] min-[360px]:max-w-none">{systemSettings.upiId}</span>
-              <button
-                type="button"
-                onClick={handleCopyUpi}
-                className="p-1 hover:bg-stone-100 rounded text-amber-800 cursor-pointer shrink-0"
-                title="UPI ID कॉपी करें"
-              >
-                {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            {copiedUpi && <span className="text-[11px] font-bold text-emerald-700 mt-1">कॉपी हो गया!</span>}
-            
-            <div className="mt-2.5 flex items-center gap-2">
-              <a
-                href="QR.jpg"
-                download="Maharishi_Yagya_SBI_QR.jpg"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold rounded-lg border border-amber-300 shadow-2xs transition-colors"
-                title="QR कोड पोस्टर डाउनलोड करें"
-              >
-                <Download className="w-3.5 h-3.5 shrink-0" />
-                <span>QR पोस्टर डाउनलोड करें</span>
-              </a>
-            </div>
-
-            <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-center text-xs text-emerald-900 w-full shadow-2xs">
-              <span className="font-bold flex items-center justify-center gap-1.5 text-emerald-950 mb-0.5">
-                <span>📲</span>
-                <span>WhatsApp सूचना सेवा</span>
-              </span>
-              <p className="text-[11px] leading-tight">
-                व्यवस्थापक सत्यापन उपरांत टोकन व सभी विवरण आपके WhatsApp नंबर पर स्वतः प्रेषित होंगे।
-              </p>
-            </div>
-
-            <span className="text-[10px] min-[360px]:text-[11px] text-stone-500 mt-2">
-              PhonePe • Google Pay • Paytm • BHIM • YONO SBI • WhatsApp Pay
-            </span>
+        {/* Main Production Call to Action: "भुगतान करें" (Requirement 2 & 3) */}
+        <div className="bg-gradient-to-br from-[#fffdfa] to-[#fbf6ee] border-2 border-amber-300/80 rounded-2xl p-5 sm:p-8 text-center space-y-4 shadow-sm">
+          <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-900 bg-amber-100 px-3 py-1 rounded-full border border-amber-300">
+            <CreditCard className="w-3.5 h-3.5 text-[#8a1523]" />
+            <span>ऑनलाइन UPI गेटवे भुगतान (Google Pay • PhonePe • Paytm • BHIM)</span>
           </div>
 
-          {/* Right: UTR Input & Screenshot */}
-          <div className="space-y-4 w-full">
-            <div>
-              <label className="block text-xs font-bold text-stone-800 mb-1">
-                12 अंकों का बैंक UPI Ref / UTR नंबर <span className="text-rose-600">*</span>
-              </label>
-              <input
-                type="text"
-                maxLength={12}
-                value={utrNumber}
-                onChange={(e) => setUtrNumber(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                placeholder="उदा. 428512345678"
-                className="w-full px-3.5 sm:px-4 py-2.5 sm:py-3 bg-white border-2 border-stone-300 rounded-xl text-xs sm:text-sm font-mono font-bold text-stone-900 focus:outline-hidden focus:border-amber-600"
-              />
-              <p className="text-[11px] text-stone-500 mt-1.5">
-                PhonePe, Google Pay, Paytm अथवा BHIM से भुगतान के बाद प्राप्त 12 अंकों का Ref/UTR नंबर भरें।
-              </p>
-            </div>
+          <h3 className="text-xl sm:text-2xl font-bold font-serif text-stone-900">
+            हवन कुंड {formattedKund} के लिए दक्षिणा भुगतान करें
+          </h3>
+          <p className="text-xs sm:text-sm text-stone-600 max-w-lg mx-auto">
+            बटन पर क्लिक करते ही सुरक्षित पेमेंट गेटवे खुलेगा जहाँ आप अपने मोबाइल में उपलब्ध किसी भी UPI ऐप अथवा QR कोड द्वारा सीधे भुगतान कर सकते हैं।
+          </p>
 
-            <div>
-              <label className="block text-xs font-bold text-stone-800 mb-1">
-                भुगतान का स्क्रीनशॉट संलग्न करें (वैकल्पिक परंतु अनुशंसित)
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleScreenshotUpload}
-                className="w-full text-xs text-stone-600 file:mr-2 sm:file:mr-3 file:py-1.5 sm:file:py-2 file:px-3 sm:file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-100 file:text-amber-900 hover:file:bg-amber-200 cursor-pointer"
-              />
-
-              {screenshotData && (
-                <div className="mt-2.5 p-2 bg-stone-50 border border-stone-200 rounded-xl flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                    <img
-                      src={screenshotData}
-                      alt="Uploaded Receipt Preview"
-                      className="w-10 h-10 sm:w-12 sm:h-12 object-cover rounded-lg border border-stone-300 shadow-2xs shrink-0"
-                    />
-                    <div className="text-xs min-w-0">
-                      <span className="font-bold text-stone-800 block truncate">स्क्रीनशॉट संलग्न हो गया</span>
-                      <span className="text-[11px] text-emerald-700 font-semibold block truncate">सत्यापन हेतु तैयार</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setScreenshotData('')}
-                    className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1 rounded-md hover:bg-rose-50 cursor-pointer shrink-0"
-                  >
-                    हटाएं (Remove)
-                  </button>
-                </div>
+          <div className="py-2">
+            <button
+              type="button"
+              disabled={isCreatingOrder || isLockExpired}
+              onClick={handleInitiatePayment}
+              className={`w-full max-w-md mx-auto py-4 px-6 text-white font-black text-base sm:text-lg rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 cursor-pointer ${
+                isCreatingOrder || isLockExpired
+                  ? 'bg-stone-400 cursor-not-allowed opacity-75'
+                  : 'bg-gradient-to-r from-[#8a1523] to-[#a31a2c] hover:from-[#70101b] hover:to-[#8a1523] hover:shadow-2xl transform active:scale-98'
+              }`}
+            >
+              {isCreatingOrder ? (
+                <>
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  <span>ऑर्डर तैयार हो रहा है...</span>
+                </>
+              ) : (
+                <>
+                  <span>भुगतान करें (Pay ₹{Number(amount).toLocaleString('en-IN')})</span>
+                  <span className="text-xl">➔</span>
+                </>
               )}
-            </div>
+            </button>
+          </div>
 
-            {errorMsg && (
-              <div className="p-3 bg-rose-50 border border-rose-300 text-rose-800 text-xs rounded-xl font-medium">
-                {errorMsg}
+          <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-stone-500 pt-1">
+            <span>🛡️ 256-बिट SSL सुरक्षित एन्क्रिप्शन</span>
+            <span>•</span>
+            <span>बैंक द्वारा प्रत्यक्ष सत्यापन</span>
+            <span>•</span>
+            <span>तात्कालिक टोकन व QR पास निर्माण</span>
+          </div>
+
+          {/* Toggle for manual fallback scan */}
+          <div className="pt-3 border-t border-amber-200">
+            <button
+              type="button"
+              onClick={() => setShowManualQr(!showManualQr)}
+              className="text-xs font-bold text-amber-900 hover:text-[#8a1523] underline cursor-pointer"
+            >
+              {showManualQr
+                ? '▲ प्रत्यक्ष SBI QR पोस्टर विवरण छिपाएं'
+                : '▼ आश्रम के प्रत्यक्ष SBI QR पोस्टर या UTR द्वारा भुगतान करना चाहते हैं? यहाँ क्लिक करें'}
+            </button>
+          </div>
+        </div>
+
+        {/* Optional Manual Fallback Display */}
+        {showManualQr && (
+          <div className="mt-6 pt-6 border-t border-stone-200 grid grid-cols-1 md:grid-cols-2 gap-6 items-start animate-in fade-in">
+            {/* Left: Official SBI QR */}
+            <div className="flex flex-col items-center p-4 bg-[#faf5eb] rounded-2xl border border-amber-300 text-center">
+              <img
+                src="QR.jpg"
+                alt="SBI QR"
+                className="w-48 h-auto object-contain rounded-xl border border-stone-300 shadow-sm cursor-pointer"
+                onClick={() => setZoomQr(true)}
+              />
+              <span className="text-xs font-bold text-stone-900 mt-2">आधिकारिक SBI UPI QR पोस्टर</span>
+              <div className="flex items-center gap-2 mt-1 bg-white px-3 py-1 rounded-lg border border-stone-300 text-xs font-mono font-bold">
+                <span>{systemSettings.upiId}</span>
+                <button type="button" onClick={handleCopyUpi} className="p-1 cursor-pointer">
+                  {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
               </div>
-            )}
-
-            <div className="p-3.5 bg-amber-50 border-2 border-amber-300 rounded-xl sm:rounded-2xl text-xs text-amber-950 space-y-1">
-              <span className="font-bold block text-amber-900">
-                🔒 व्यवस्थापक सत्यापन नियम (Admin Verification Policy):
-              </span>
-              <p className="text-[11px] text-amber-900/90 leading-relaxed">
-                यह विवरण सबमिट करने पर आपकी स्थिति तुरंत <strong>“Payment Pending Verification” (भुगतान सत्यापन लंबित)</strong> हो जाएगी। <strong>केवल विवरण भरने से बुकिंग स्वतः कन्फर्म नहीं होगी।</strong> आश्रम व्यवस्थापक द्वारा बैंक खाते से UTR का मिलान करने के बाद ही आधिकारिक टोकन कन्फर्म होगा और WhatsApp पर भेजा जाएगा।
-              </p>
             </div>
 
-            <div className="pt-2 space-y-2">
-              <button
-                type="button"
-                onClick={() => handleSubmitProof(false)}
-                className="w-full py-3.5 px-4 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
-              >
-                <FileText className="w-4 h-4 text-white shrink-0" />
-                <span>भुगतान विवरण जमा करें (Submit for Verification)</span>
-              </button>
+            {/* Right: Manual UTR form */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">
+                  12 अंकों का बैंक UPI Ref / UTR नंबर दर्ज करें
+                </label>
+                <input
+                  type="text"
+                  maxLength={12}
+                  value={utrNumber}
+                  onChange={(e) => setUtrNumber(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                  placeholder="उदा. 428512345678"
+                  className="w-full px-3.5 py-2.5 bg-white border-2 border-stone-300 rounded-xl text-xs font-mono font-bold"
+                />
+              </div>
 
-              <div className="pt-2 border-t border-stone-200 text-center">
+              <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">
+                  स्क्रीनशॉट संलग्न करें (वैकल्पिक)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleScreenshotUpload}
+                  className="w-full text-xs text-stone-600 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-100 file:text-amber-900"
+                />
+              </div>
+
+              <div className="pt-2">
                 <button
                   type="button"
-                  onClick={() => handleSubmitProof(true)}
-                  className="text-xs font-bold text-amber-900 hover:underline cursor-pointer"
+                  onClick={() => handleManualProofSubmit(false)}
+                  className="w-full py-3 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
                 >
-                  अथवा यज्ञ स्थल काउंटर पर नकद दक्षिणा देने का विकल्प चुनें
+                  मैन्युअल प्रमाण सबमिट करें
                 </button>
               </div>
             </div>
           </div>
+        )}
+
+        {/* Counter Cash Option */}
+        <div className="mt-5 pt-4 border-t border-stone-200 text-center">
+          <button
+            type="button"
+            onClick={() => handleManualProofSubmit(true)}
+            className="text-xs font-bold text-amber-900 hover:text-[#8a1523] underline cursor-pointer"
+          >
+            अथवा यज्ञ स्थल काउंटर पर नकद दक्षिणा देने का विकल्प चुनें
+          </button>
         </div>
       </div>
 
+      {/* ======================================================================
+          SANDBOX / TEST PAYMENT MODE MODAL (Requirement 17)
+          ====================================================================== */}
+      {testModalOpen && currentOrder && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-7 shadow-2xl border-2 border-amber-400 text-center space-y-4">
+            <div className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-amber-950 bg-amber-100 px-3.5 py-1.5 rounded-full border border-amber-300">
+              <AlertTriangle className="w-4 h-4 text-amber-700" />
+              <span>TEST PAYMENT MODE (परीक्षण मोड)</span>
+            </div>
+
+            <h3 className="text-xl font-bold font-serif text-stone-900">
+              UPI भुगतान सिम्युलेटर
+            </h3>
+
+            <p className="text-xs text-stone-600 leading-relaxed">
+              वर्तमान में सर्वर वातावरण में वास्तविक पेमेंट गेटवे की लाइव कुंजियां (Razorpay Key ID / Secret) प्रदान नहीं की गई हैं। अतः यह विकास/परीक्षण सिम्युलेटर सक्रिय है।
+            </p>
+
+            <div className="bg-stone-50 border border-stone-200 rounded-2xl p-3.5 text-left text-xs space-y-1.5 font-mono">
+              <div className="flex justify-between">
+                <span className="text-stone-500">Order ID:</span>
+                <span className="font-bold text-stone-800 break-all">{currentOrder.orderId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">यजमान:</span>
+                <span className="font-bold text-stone-800">{activeReg?.fullName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">हवन कुंड:</span>
+                <span className="font-bold text-[#8a1523]">{formattedKund}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">राशि:</span>
+                <span className="font-bold text-[#872e18]">₹ {Number(amount).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTestModalOpen(false);
+                  verifyPaymentOnBackend({
+                    bookingId: currentOrder.bookingId,
+                    razorpay_order_id: currentOrder.orderId,
+                    razorpay_payment_id: `pay_test_${Date.now()}`,
+                    isTestMode: true,
+                  });
+                }}
+                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+              >
+                <span>✓ सफल UPI भुगतान का परीक्षण करें (Simulate Success)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTestModalOpen(false);
+                  handlePaymentFailure('परीक्षण मोड में भुगतान निरस्त किया गया (Simulated Cancel / Failure)');
+                }}
+                className="w-full py-2.5 px-4 bg-rose-100 hover:bg-rose-200 text-rose-800 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                ✕ भुगतान विफलता का परीक्षण करें (Simulate Failure)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTestModalOpen(false)}
+                className="w-full py-2 text-xs text-stone-500 hover:text-stone-800 font-semibold cursor-pointer"
+              >
+                वापस जाएं
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Zoom Modal */}
       {zoomQr && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-4 cursor-pointer animate-in fade-in"
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 cursor-pointer"
           onClick={() => setZoomQr(false)}
         >
-          <div className="relative max-w-sm w-full max-h-[92vh] overflow-y-auto bg-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl shadow-2xl text-center" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-2 pb-2 border-b border-stone-200 text-xs font-bold text-stone-800">
-              <span>आधिकारिक SBI UPI QR कोड</span>
-              <button onClick={() => setZoomQr(false)} className="text-stone-500 hover:text-stone-900 text-base font-bold cursor-pointer p-1">✕</button>
-            </div>
-            <img
-              src="QR.jpg"
-              alt="श्री महर्षि वेदविज्ञान संस्थान आधिकारिक SBI UPI QR कोड"
-              className="w-full max-h-[55vh] object-contain rounded-xl mx-auto shadow-sm"
-            />
-            <div className="mt-3 flex flex-col min-[360px]:flex-row items-center justify-center gap-2">
-              <span className="text-xs font-mono font-bold text-stone-800 bg-stone-100 py-1.5 px-2.5 rounded-xl border border-stone-300 truncate max-w-full">
-                UPI ID: {systemSettings.upiId}
-              </span>
-              <a
-                href="QR.jpg"
-                download="Maharishi_Yagya_SBI_QR.jpg"
-                target="_blank"
-                rel="noreferrer"
-                className="w-full min-[360px]:w-auto justify-center px-3 py-1.5 bg-[#8a1523] hover:bg-[#70101b] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>QR सहेजें</span>
-              </a>
-            </div>
+          <div className="bg-white p-4 rounded-2xl max-w-sm w-full text-center" onClick={(e) => e.stopPropagation()}>
+            <img src="QR.jpg" alt="SBI QR" className="w-full max-h-[60vh] object-contain rounded-xl" />
+            <button
+              onClick={() => setZoomQr(false)}
+              className="mt-3 px-4 py-1.5 bg-[#8a1523] text-white text-xs font-bold rounded-lg cursor-pointer"
+            >
+              बंद करें
+            </button>
           </div>
         </div>
       )}

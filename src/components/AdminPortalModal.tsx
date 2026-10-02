@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Trash2,
+  QrCode,
 } from 'lucide-react';
 import { Registration, DevoteeUser, AuditLog, SystemSettings, getPaymentStatusDisplay } from '../types/yagya';
 import { exportDatabaseToCSV } from '../utils/csvExport';
@@ -1088,6 +1089,16 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                                     >
                                       <Eye className="w-3.5 h-3.5 inline" />
                                     </button>
+                                    <a
+                                      href={`/api/booking/verify/${b.id}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1 text-amber-800 hover:bg-amber-100 rounded cursor-pointer inline-flex items-center gap-0.5 text-[11px] font-bold"
+                                      title="गेटवे QR सत्यापन पास खोलें"
+                                    >
+                                      <QrCode className="w-3.5 h-3.5 inline text-[#8a1523]" />
+                                      <span>QR पास</span>
+                                    </a>
                                   </td>
                                 </tr>
                               );

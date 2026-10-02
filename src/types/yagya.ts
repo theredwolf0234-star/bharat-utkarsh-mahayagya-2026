@@ -232,3 +232,49 @@ export interface KundLiveItem {
     paymentStatus: PaymentStatus;
   };
 }
+
+export type BookingStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
+export type GatewayPaymentStatus = 'CREATED' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
+
+export interface BookingRecord {
+  bookingId: string;
+  tokenNumber: string;
+  userId?: string;
+  name: string;
+  mobile: string;
+  email?: string;
+  eventDate: string;
+  kundNumber: number;
+  amount: number;
+  bookingStatus: BookingStatus;
+  paymentStatus: GatewayPaymentStatus;
+  paymentOrderId?: string;
+  paymentId?: string;
+  paymentSignature?: string;
+  qrCode?: string;
+  verificationHash?: string;
+  createdAt: string;
+  updatedAt: string;
+  lockExpiresAt?: string;
+}
+
+export interface CreateOrderResponse {
+  success: boolean;
+  orderId: string;
+  bookingId: string;
+  amount: number;
+  currency: string;
+  keyId?: string;
+  isTestMode: boolean;
+  lockExpiresAt: string;
+  devotee: {
+    name: string;
+    mobile: string;
+    email?: string;
+    kundNumber: number;
+    date: string;
+    timeSlot: string;
+  };
+  error?: string;
+}
+
