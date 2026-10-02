@@ -45,7 +45,9 @@ export default function App() {
   // Persistent / In-memory Database State (Fresh Start for Kunds 10-108)
   const [registrations, setRegistrations] = useState<Registration[]>(() => {
     try {
-      const saved = localStorage.getItem('yagya_registrations');
+      localStorage.removeItem('yagya_registrations');
+      localStorage.removeItem('maharishi_yagya_registrations_2026_v1');
+      const saved = localStorage.getItem('yagya_registrations_v2');
       return saved ? JSON.parse(saved) : INITIAL_REGISTRATIONS;
     } catch (e) {
       return INITIAL_REGISTRATIONS;
@@ -72,7 +74,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('yagya_registrations', JSON.stringify(registrations));
+      localStorage.setItem('yagya_registrations_v2', JSON.stringify(registrations));
     } catch (e) {}
   }, [registrations]);
 
@@ -98,18 +100,7 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.bookings)) {
-            setRegistrations((prev) => {
-              // Merge server bookings with local bookings
-              const serverMap = new Map<string, Registration>();
-              data.bookings.forEach((b: Registration) => serverMap.set(b.id, b));
-              // Also keep any local un-synced bookings
-              prev.forEach((p) => {
-                if (!serverMap.has(p.id)) {
-                  serverMap.set(p.id, p);
-                }
-              });
-              return Array.from(serverMap.values());
-            });
+            setRegistrations(data.bookings);
           }
         }
       } catch (e) {

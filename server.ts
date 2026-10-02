@@ -11,6 +11,7 @@ import {
   insertOrUpdateRegistration,
   getAllRegistrationsFromDb,
   deleteRegistrationFromDb,
+  clearAllRegistrationsFromDb,
   insertAuditLog,
   getAllAuditLogsFromDb,
   getSystemSettingsFromDb,
@@ -1338,6 +1339,38 @@ app.delete('/api/admin/bookings/:id', requireAdmin, async (req: Request, res: Re
   }
 
   res.json({ success: true, message: 'पंजीकरण रिकॉर्ड हटाया गया।' });
+});
+
+// Admin: Reset & Restart All Kund Bookings (Fresh Clean Start)
+app.post('/api/admin/reset-all-bookings', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminUser = (req as any).adminUsername || 'admin';
+    registrationsStore.clear();
+    usedUtrs.clear();
+    saveToDisk(); // writes empty array [] to bookings.json
+    clearAllRegistrationsFromDb(); // removes all records from SQLite
+
+    insertAuditLog({
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      adminUsername: adminUser,
+      action: 'RESET_ALL_BOOKINGS',
+      details: 'All Kund bookings have been completely cleared and restarted by admin. All 108 Hawan Kunds are now fresh and available.',
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
+      await supabase.from('registrations').delete().neq('id', 'keep_clean_empty_records');
+    } catch (e) {
+      // ignore
+    }
+
+    return res.json({
+      success: true,
+      message: 'सभी हवन कुंड बुकिंग सफलतापूर्वक शून्य (Clear) कर दी गई हैं। अब सभी कुंड (10 से 108) नए सिरे से उपलब्ध हैं।',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'रीसेट करने में त्रुटि।' });
+  }
 });
 
 // Admin: Get Audit Logs

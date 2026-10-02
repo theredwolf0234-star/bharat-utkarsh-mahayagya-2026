@@ -564,6 +564,18 @@ export function deleteRegistrationFromDb(id: string): boolean {
   }
 }
 
+export function clearAllRegistrationsFromDb(): boolean {
+  if (!dbInstance) return false;
+  try {
+    dbInstance.run('DELETE FROM registrations;');
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Clear all registrations error in SQLite:', e);
+    return false;
+  }
+}
+
 export function insertAuditLog(log: DbAuditLog): boolean {
   if (!dbInstance) return false;
   try {

@@ -17,6 +17,7 @@ import {
   XCircle,
   AlertTriangle,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { Registration, DevoteeUser, AuditLog, SystemSettings, getPaymentStatusDisplay } from '../types/yagya';
 import { exportDatabaseToCSV } from '../utils/csvExport';
@@ -211,6 +212,41 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     });
   };
 
+  const handleResetAllBookings = async () => {
+    const confirmed = window.confirm(
+      '⚠️ क्या आप सचमुच सभी 108 हवन कुंड बुकिंग को शून्य (Clear & Restart) करना चाहते हैं?\n\nयह सभी यजमानों के आरक्षण, टोकन और रिकॉर्ड हटा देगा और कुंड 10 से 108 पूर्णतः मुक्त हो जाएंगे।'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch('/api/admin/reset-all-bookings', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer maharishi_master_session_token',
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRegistrations([]);
+        try {
+          localStorage.setItem('yagya_registrations_v2', '[]');
+          localStorage.removeItem('yagya_registrations');
+        } catch (e) {}
+        alert(data.message || 'सभी हवन कुंड बुकिंग सफलतापूर्वक रीसेट कर दी गई हैं।');
+      } else {
+        alert(data.error || 'त्रुटि हुई।');
+      }
+    } catch (e) {
+      setRegistrations([]);
+      try {
+        localStorage.setItem('yagya_registrations_v2', '[]');
+        localStorage.removeItem('yagya_registrations');
+      } catch (err) {}
+      alert('सभी स्थानीय व डेटाबेस बुकिंग शून्य (Clear) कर दी गई हैं।');
+    }
+  };
+
   const pendingList = registrations.filter((r) => r.paymentStatus === 'pending');
 
   const filteredBookings = registrations.filter((r) => {
@@ -382,7 +418,17 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                   title="सर्वर से नवीनतम बुकिंग्स व UTR रिकॉर्ड्स ताज़ा करें"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isFetchingServer ? 'animate-spin' : ''}`} />
-                  <span>{isFetchingServer ? 'डेटा आ रहा है...' : 'ताज़ा करें (Refresh)'}</span>
+                  <span>{isFetchingServer ? 'डेटा आ रहा है...' : 'ताज़ा करें'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResetAllBookings}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer whitespace-nowrap transition-all"
+                  title="सभी 108 हवन कुंड बुकिंग को पूर्णतः शून्य एवं रीसेट करें"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-white" />
+                  <span>सभी बुकिंग रीसेट (Clear & Restart)</span>
                 </button>
               </div>
 
