@@ -119,7 +119,7 @@ export const PaymentTab: React.FC<Props> = ({
     'MAHARISHI VED VIGYAN SANSTHAN'
   )}&am=${amount}&cu=INR&tn=${encodeURIComponent(`Yagya-Kund${formattedKund}`)}`;
 
-  // Generate SBI QR code
+  // Generate UPI QR code
   useEffect(() => {
     if (qrCanvasRef.current && activeReg && activeReg.paymentStatus !== 'paid') {
       QRCode.toCanvas(
@@ -578,7 +578,7 @@ export const PaymentTab: React.FC<Props> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-            {/* Left: SBI UPI QR Code */}
+            {/* Left: Official UPI QR Code */}
             <div className="flex flex-col items-center justify-center p-5 bg-[#faf5eb] rounded-2xl border border-amber-200 text-center">
               <div className="bg-white p-3 rounded-2xl shadow-sm border border-stone-300 mb-3">
                 <canvas ref={qrCanvasRef} className="rounded-lg" />

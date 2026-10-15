@@ -451,7 +451,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
     );
   }
 
-  // CASE 5: PAYMENT SUBMISSION FORM (Showing official SBI QR.jpg image)
+  // CASE 5: PAYMENT SUBMISSION FORM (Showing official Maharishi Ved Vigyan Sansthan YesPay QR.jpg image)
   const kundCount = activeReg?.kundCount || 1;
   const amount = activeReg?.amount || (kundCount * 1100);
   const kundFormatted =

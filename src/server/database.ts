@@ -201,6 +201,8 @@ export async function initSqliteDatabase() {
 
     INSERT OR IGNORE INTO system_settings (id, reservation_expiry_minutes, test_mode_enabled, upi_id, price_per_person)
     VALUES ('default', 15, 0, 'yespay.bizsbiz296352@yesbankltd', 1100);
+
+    UPDATE system_settings SET upi_id = 'yespay.bizsbiz296352@yesbankltd' WHERE id = 'default' AND (upi_id LIKE '%sbi%' OR upi_id IS NULL);
   `);
 
   saveSqliteToDisk();
