@@ -23,10 +23,8 @@ import { DevoteeTicketsPortal } from './components/DevoteeTicketsPortal';
 import { AdminPortalModal } from './components/AdminPortalModal';
 import { PrintableSlipModal } from './components/PrintableSlipModal';
 import { StatusLookupModal } from './components/StatusLookupModal';
-import { OpeningSlideshow } from './components/OpeningSlideshow';
 
 export default function App() {
-  const [showOpeningSlideshow, setShowOpeningSlideshow] = useState<boolean>(true);
   const [currentView, setCurrentView] = useState<'home' | 'register' | 'tickets'>('home');
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [selectedDate, setSelectedDate] = useState<string>(YAGYA_DATES[0].date);
@@ -45,9 +43,7 @@ export default function App() {
   // Persistent / In-memory Database State (Fresh Start for Kunds 10-108)
   const [registrations, setRegistrations] = useState<Registration[]>(() => {
     try {
-      localStorage.removeItem('yagya_registrations');
-      localStorage.removeItem('maharishi_yagya_registrations_2026_v1');
-      const saved = localStorage.getItem('yagya_registrations_v2');
+      const saved = localStorage.getItem('yagya_registrations');
       return saved ? JSON.parse(saved) : INITIAL_REGISTRATIONS;
     } catch (e) {
       return INITIAL_REGISTRATIONS;
@@ -74,7 +70,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('yagya_registrations_v2', JSON.stringify(registrations));
+      localStorage.setItem('yagya_registrations', JSON.stringify(registrations));
     } catch (e) {}
   }, [registrations]);
 
@@ -100,7 +96,18 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.bookings)) {
-            setRegistrations(data.bookings);
+            setRegistrations((prev) => {
+              // Merge server bookings with local bookings
+              const serverMap = new Map<string, Registration>();
+              data.bookings.forEach((b: Registration) => serverMap.set(b.id, b));
+              // Also keep any local un-synced bookings
+              prev.forEach((p) => {
+                if (!serverMap.has(p.id)) {
+                  serverMap.set(p.id, p);
+                }
+              });
+              return Array.from(serverMap.values());
+            });
           }
         }
       } catch (e) {
@@ -123,8 +130,8 @@ export default function App() {
   // System settings state
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
     expiryMinutes: 15,
-    upiId: 'maharishivedvigyan@sbi',
-    pricePerPerson: 2100,
+    upiId: 'yespay.bizsbiz296352@yesbankltd',
+    pricePerPerson: 1100,
     testModeEnabled: false,
   });
 
@@ -173,18 +180,8 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Full-screen opening flyer slideshow on website entry (2-3s each)
-  if (showOpeningSlideshow) {
-    return (
-      <OpeningSlideshow
-        slideDurationMs={2500}
-        onComplete={() => setShowOpeningSlideshow(false)}
-      />
-    );
-  }
-
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#faf5eb] flex flex-col justify-between text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
+    <div className="min-h-screen bg-[#faf5eb] flex flex-col justify-between text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
       {/* Top Pure Vedic Header with Navigation and Stepper */}
       <Header
         currentView={currentView}
@@ -194,11 +191,10 @@ export default function App() {
         currentUser={currentUser}
         onStartBooking={handleStartBooking}
         onOpenStatusLookup={() => setShowStatusModal(true)}
-        onOpenIntroSlides={() => setShowOpeningSlideshow(true)}
       />
 
       {/* Main Content Body */}
-      <main className="flex-1 w-full max-w-full overflow-x-hidden">
+      <main className="flex-1">
         {currentView === 'home' && (
           <HomeView
             selectedDate={selectedDate}
@@ -207,12 +203,11 @@ export default function App() {
             onStartBooking={handleStartBooking}
             onOpenTickets={() => setCurrentView('tickets')}
             onOpenStatusLookup={() => setShowStatusModal(true)}
-            onOpenIntroSlides={() => setShowOpeningSlideshow(true)}
           />
         )}
 
         {currentView === 'register' && (
-          <div className="w-full max-w-full pb-14 bg-[#faf5eb] min-h-[80vh]">
+          <div className="w-full pb-14 bg-[#faf5eb] min-h-[80vh]">
             {currentStep <= 2 && (
               <RegistrationStepView
                 initialKund={preselectedKund}
@@ -224,7 +219,6 @@ export default function App() {
                 onProceedToPayment={handleProceedToPayment}
                 kundSummary={kundSummary}
                 registrations={registrations}
-                onBack={() => setCurrentView('home')}
               />
             )}
             {currentStep >= 3 && (

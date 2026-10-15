@@ -99,7 +99,7 @@ export const PaymentTab: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, [activeReg?.expiresAt, activeReg?.paymentStatus]);
 
-  const upiId = 'maharishivedvigyan@sbi';
+  const upiId = 'yespay.bizsbiz296352@yesbankltd';
   const amount = activeReg ? activeReg.amount : 2200;
   const kundNumber = activeReg ? activeReg.kundNumber : 10;
   const formattedKund = String(kundNumber).padStart(3, '0');
@@ -115,8 +115,8 @@ export const PaymentTab: React.FC<Props> = ({
     : null;
 
   // Standard UPI URI
-  const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
-    'Maharishi Vedvigyan Sansthan'
+  const upiUri = `upi://pay?mc=8220&pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
+    'MAHARISHI VED VIGYAN SANSTHAN'
   )}&am=${amount}&cu=INR&tn=${encodeURIComponent(`Yagya-Kund${formattedKund}`)}`;
 
   // Generate SBI QR code
@@ -584,8 +584,11 @@ export const PaymentTab: React.FC<Props> = ({
                 <canvas ref={qrCanvasRef} className="rounded-lg" />
               </div>
 
-              <div className="text-xs font-bold text-stone-800 mb-1">
-                आधिकारिक SBI UPI QR कोड
+              <div className="text-xs font-bold text-stone-800 mb-0.5">
+                आधिकारिक संस्थान UPI QR कोड
+              </div>
+              <div className="text-[11px] font-bold text-[#8a1523] mb-1">
+                MAHARISHI VED VIGYAN SANSTHAN
               </div>
 
               {/* UPI ID Copy Field */}

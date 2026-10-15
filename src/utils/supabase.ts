@@ -266,7 +266,7 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
     reservation_expiry_minutes INTEGER NOT NULL DEFAULT 15,
     test_mode_enabled BOOLEAN NOT NULL DEFAULT false,
-    upi_id TEXT NOT NULL DEFAULT 'maharishivedvigyan@sbi',
+    upi_id TEXT NOT NULL DEFAULT 'yespay.bizsbiz296352@yesbankltd',
     price_per_person INTEGER NOT NULL DEFAULT 1100,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

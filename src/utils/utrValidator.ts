@@ -148,14 +148,14 @@ export function validateUpiUtr(utr: string, existingUtrs: string[] = []): UtrVal
   }
 
   // Detect Bank Hint based on bank switch signatures
-  let bankHint = 'SBI / NPCI Verified UPI Gateway';
+  let bankHint = 'NPCI / UPI Verified Network';
   const prefix = clean.slice(4, 7);
   if (prefix.startsWith('1') || prefix.startsWith('2')) {
     bankHint = 'State Bank of India (SBI Pay / YONO)';
   } else if (prefix.startsWith('3') || prefix.startsWith('4')) {
     bankHint = 'National Payments Corporation (BHIM / NPCI)';
   } else if (prefix.startsWith('5') || prefix.startsWith('6')) {
-    bankHint = 'HDFC / ICICI UPI Gateway';
+    bankHint = 'YES Bank / HDFC / ICICI UPI Network';
   } else if (prefix.startsWith('7') || prefix.startsWith('8')) {
     bankHint = 'Google Pay / PhonePe / Axis UPI';
   } else {

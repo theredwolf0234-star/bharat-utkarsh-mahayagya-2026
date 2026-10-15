@@ -1,11 +1,8 @@
 {
-  "name": "bharat-utkarsh-mahayagya-2026",
+  "name": "react-example",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.0",
   "type": "module",
-  "engines": {
-    "node": ">=20.0.0"
-  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
@@ -23,10 +20,11 @@
     "dotenv": "^17.2.3",
     "esbuild": "^0.28.2",
     "express": "^4.21.2",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pngjs": "^7.0.0",
     "qrcode": "^1.5.4",
-    "razorpay": "^2.9.8",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "sql.js": "^1.14.2",

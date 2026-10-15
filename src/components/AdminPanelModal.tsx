@@ -72,7 +72,7 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose, onOpenSlip, onRefres
   const [settings, setSettings] = useState<SystemSettings>({
     reservationExpiryMinutes: 15,
     testModeEnabled: false,
-    upiId: 'maharishivedvigyan@sbi',
+    upiId: 'yespay.bizsbiz296352@yesbankltd',
     pricePerPerson: 1100,
   });
   const [settingsSavedMsg, setSettingsSavedMsg] = useState('');
@@ -969,7 +969,7 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose, onOpenSlip, onRefres
                     {/* UPI ID Setting */}
                     <div>
                       <label className="block text-xs font-bold text-stone-800 mb-1">
-                        आधिकारिक SBI UPI ID:
+                        आधिकारिक संस्थान UPI ID (VPA):
                       </label>
                       <input
                         type="text"
