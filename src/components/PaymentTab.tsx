@@ -99,7 +99,7 @@ export const PaymentTab: React.FC<Props> = ({
     return () => clearInterval(interval);
   }, [activeReg?.expiresAt, activeReg?.paymentStatus]);
 
-  const upiId = 'maharishivedvigyan@sbi';
+  const upiId = 'yespay.bizsbiz296352@yesbankltd';
   const amount = activeReg ? activeReg.amount : 2200;
   const kundNumber = activeReg ? activeReg.kundNumber : 10;
   const formattedKund = String(kundNumber).padStart(3, '0');
@@ -116,7 +116,7 @@ export const PaymentTab: React.FC<Props> = ({
 
   // Standard UPI URI
   const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(
-    'Maharishi Vedvigyan Sansthan'
+    'MAHARISHI VED VIGYAN SANSTHAN'
   )}&am=${amount}&cu=INR&tn=${encodeURIComponent(`Yagya-Kund${formattedKund}`)}`;
 
   // Generate SBI QR code
@@ -585,7 +585,7 @@ export const PaymentTab: React.FC<Props> = ({
               </div>
 
               <div className="text-xs font-bold text-stone-800 mb-1">
-                आधिकारिक SBI UPI QR कोड
+                आधिकारिक YesPay UPI QR कोड
               </div>
 
               {/* UPI ID Copy Field */}

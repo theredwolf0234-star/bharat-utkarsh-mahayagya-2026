@@ -264,9 +264,9 @@ CREATE INDEX IF NOT EXISTS idx_registrations_status ON public.registrations(paym
 -- 3. System settings table
 CREATE TABLE IF NOT EXISTS public.system_settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
-    reservation_expiry_minutes INTEGER NOT NULL DEFAULT 15,
+    reservation_expiry_minutes INTEGER NOT NULL DEFAULT 5,
     test_mode_enabled BOOLEAN NOT NULL DEFAULT false,
-    upi_id TEXT NOT NULL DEFAULT 'maharishivedvigyan@sbi',
+    upi_id TEXT NOT NULL DEFAULT 'yespay.bizsbiz296352@yesbankltd',
     price_per_person INTEGER NOT NULL DEFAULT 1100,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

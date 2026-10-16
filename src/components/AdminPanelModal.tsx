@@ -70,9 +70,9 @@ export const AdminPanelModal: React.FC<Props> = ({ onClose, onOpenSlip, onRefres
 
   // Settings state
   const [settings, setSettings] = useState<SystemSettings>({
-    reservationExpiryMinutes: 15,
+    reservationExpiryMinutes: 5,
     testModeEnabled: false,
-    upiId: 'maharishivedvigyan@sbi',
+    upiId: 'yespay.bizsbiz296352@yesbankltd',
     pricePerPerson: 1100,
   });
   const [settingsSavedMsg, setSettingsSavedMsg] = useState('');

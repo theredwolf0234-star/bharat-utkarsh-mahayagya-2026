@@ -122,8 +122,8 @@ export default function App() {
 
   // System settings state
   const [systemSettings, setSystemSettings] = useState<SystemSettings>({
-    expiryMinutes: 15,
-    upiId: 'maharishivedvigyan@sbi',
+    expiryMinutes: 5,
+    upiId: 'yespay.bizsbiz296352@yesbankltd',
     pricePerPerson: 2100,
     testModeEnabled: false,
   });

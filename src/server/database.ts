@@ -232,14 +232,19 @@ export async function initSqliteDatabase() {
 
     CREATE TABLE IF NOT EXISTS system_settings (
       id TEXT PRIMARY KEY DEFAULT 'default',
-      reservation_expiry_minutes INTEGER DEFAULT 15,
+      reservation_expiry_minutes INTEGER DEFAULT 5,
       test_mode_enabled INTEGER DEFAULT 0,
-      upi_id TEXT DEFAULT 'maharishivedvigyan@sbi',
+      upi_id TEXT DEFAULT 'yespay.bizsbiz296352@yesbankltd',
       price_per_person INTEGER DEFAULT 1100
     );
 
     INSERT OR IGNORE INTO system_settings (id, reservation_expiry_minutes, test_mode_enabled, upi_id, price_per_person)
-    VALUES ('default', 15, 0, 'maharishivedvigyan@sbi', 1100);
+    VALUES ('default', 5, 0, 'yespay.bizsbiz296352@yesbankltd', 1100);
+
+    UPDATE system_settings 
+    SET reservation_expiry_minutes = 5, 
+        upi_id = 'yespay.bizsbiz296352@yesbankltd' 
+    WHERE id = 'default';
   `);
 
   saveSqliteToDisk();
@@ -1135,23 +1140,23 @@ export function getAllAuditLogsFromDb(): DbAuditLog[] {
 
 export function getSystemSettingsFromDb(): DbSystemSettings {
   if (!dbInstance) {
-    return { reservationExpiryMinutes: 15, testModeEnabled: false, upiId: 'maharishivedvigyan@sbi', pricePerPerson: 1100 };
+    return { reservationExpiryMinutes: 5, testModeEnabled: false, upiId: 'yespay.bizsbiz296352@yesbankltd', pricePerPerson: 1100 };
   }
   try {
     const res = dbInstance.exec('SELECT reservation_expiry_minutes, test_mode_enabled, upi_id, price_per_person FROM system_settings WHERE id = "default" LIMIT 1;');
     if (res && res.length > 0 && res[0].values.length > 0) {
       const row = res[0].values[0];
       return {
-        reservationExpiryMinutes: Number(row[0]) || 15,
+        reservationExpiryMinutes: Number(row[0]) || 5,
         testModeEnabled: Boolean(row[1]),
-        upiId: String(row[2] || 'maharishivedvigyan@sbi'),
+        upiId: String(row[2] || 'yespay.bizsbiz296352@yesbankltd'),
         pricePerPerson: Number(row[3]) || 1100,
       };
     }
   } catch (e) {
     // continue
   }
-  return { reservationExpiryMinutes: 15, testModeEnabled: false, upiId: 'maharishivedvigyan@sbi', pricePerPerson: 1100 };
+  return { reservationExpiryMinutes: 5, testModeEnabled: false, upiId: 'yespay.bizsbiz296352@yesbankltd', pricePerPerson: 1100 };
 }
 
 export function updateSystemSettingsInDb(settings: Partial<DbSystemSettings>): boolean {

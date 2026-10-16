@@ -42,7 +42,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
   const [activeReg, setActiveReg] = useState<Registration | null>(pendingReg);
   const [zoomQr, setZoomQr] = useState(false);
 
-  // 5-minute temporary lock countdown timer
+  // 5-minute temporary lock countdown timer (strictly 300s / 5 minutes)
   const [remainingSeconds, setRemainingSeconds] = useState<number>(() => {
     if (!pendingReg?.expiresAt) return 300;
     const diff = Math.floor((new Date(pendingReg.expiresAt).getTime() - Date.now()) / 1000);
@@ -61,7 +61,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
         setIsLockExpired(true);
         clearInterval(interval);
       } else {
-        setRemainingSeconds(diff);
+        setRemainingSeconds(Math.min(diff, 300));
       }
     }, 1000);
 
@@ -636,7 +636,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
             >
               <img
                 src="QR.jpg"
-                alt="श्री महर्षि वेदविज्ञान संस्थान आधिकारिक SBI UPI QR कोड"
+                alt="श्री महर्षि वेदविज्ञान संस्थान आधिकारिक YesPay UPI QR कोड"
                 className="w-full h-auto object-contain rounded-xl mx-auto block"
               />
               <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity">
@@ -645,7 +645,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
             </div>
 
             <div className="text-xs font-bold text-stone-900 mt-3 mb-1">
-              आधिकारिक SBI UPI QR कोड (Scan & Pay)
+              आधिकारिक YesPay UPI QR कोड (Scan & Pay)
             </div>
 
             <div className="flex items-center justify-center gap-2 mt-1 bg-white px-2.5 sm:px-3 py-1.5 rounded-xl border border-stone-300 text-xs font-mono font-bold text-stone-800 shadow-2xs max-w-full">
@@ -664,7 +664,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
             <div className="mt-2.5 flex items-center gap-2">
               <a
                 href="QR.jpg"
-                download="Maharishi_Yagya_SBI_QR.jpg"
+                download="Maharishi_Yagya_YesPay_QR.jpg"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold rounded-lg border border-amber-300 shadow-2xs transition-colors"
@@ -804,7 +804,7 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
               </span>
               <a
                 href="QR.jpg"
-                download="Maharishi_Yagya_SBI_QR.jpg"
+                download="Maharishi_Yagya_YesPay_QR.jpg"
                 target="_blank"
                 rel="noreferrer"
                 className="w-full min-[360px]:w-auto justify-center px-3 py-1.5 bg-[#8a1523] hover:bg-[#70101b] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-xs"

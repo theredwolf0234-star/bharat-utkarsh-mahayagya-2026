@@ -43,9 +43,9 @@ END $$;
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.system_settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
-    reservation_expiry_minutes INTEGER NOT NULL DEFAULT 15 CHECK (reservation_expiry_minutes >= 1 AND reservation_expiry_minutes <= 120),
+    reservation_expiry_minutes INTEGER NOT NULL DEFAULT 5 CHECK (reservation_expiry_minutes >= 1 AND reservation_expiry_minutes <= 120),
     test_mode_enabled BOOLEAN NOT NULL DEFAULT false,
-    upi_id TEXT NOT NULL DEFAULT 'maharishivedvigyan@sbi',
+    upi_id TEXT NOT NULL DEFAULT 'yespay.bizsbiz296352@yesbankltd',
     price_per_person INTEGER NOT NULL DEFAULT 1100,
     venue_map_url TEXT NOT NULL DEFAULT 'https://maps.app.goo.gl/aFmMAF5gFHR46gBGA',
     venue_address TEXT NOT NULL DEFAULT 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304',
@@ -54,8 +54,10 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
 
 -- Seed default settings row if not present
 INSERT INTO public.system_settings (id, reservation_expiry_minutes, test_mode_enabled, upi_id, price_per_person, venue_map_url, venue_address)
-VALUES ('default', 15, false, 'maharishivedvigyan@sbi', 1100, 'https://maps.app.goo.gl/aFmMAF5gFHR46gBGA', 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304')
+VALUES ('default', 5, false, 'yespay.bizsbiz296352@yesbankltd', 1100, 'https://maps.app.goo.gl/aFmMAF5gFHR46gBGA', 'रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304')
 ON CONFLICT (id) DO UPDATE SET
+    reservation_expiry_minutes = 5,
+    upi_id = 'yespay.bizsbiz296352@yesbankltd',
     venue_map_url = 'https://maps.app.goo.gl/aFmMAF5gFHR46gBGA',
     updated_at = NOW();
 

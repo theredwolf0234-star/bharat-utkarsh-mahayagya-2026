@@ -290,8 +290,8 @@ app.post('/api/kunds/lock', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'कुंड 1 से 9 पूज्य संतों हेतु आरक्षित हैं। कृपया 10 से 108 में से चुनें।' });
     }
 
-    const settings = getSystemSettingsFromDb();
-    const expiryMinutes = settings.reservationExpiryMinutes || 5; // Default 5 mins lock
+    // Strict 5-minute lock window
+    const expiryMinutes = 5;
     const nowIso = new Date().toISOString();
     const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
     const lockId = `lock-${kNum}-${cleanMobile.slice(-4)}-${Date.now()}`;
@@ -740,8 +740,8 @@ app.post('/api/reservations/temp-hold', async (req: Request, res: Response) => {
 
     const settings = getSystemSettingsFromDb();
 
-    // 5-minute atomic lock window
-    const expiryMinutes = settings.reservationExpiryMinutes || 5;
+    // Strict 5-minute atomic lock window
+    const expiryMinutes = 5;
     const nowIso = new Date().toISOString();
     const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
 
