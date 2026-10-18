@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flame, Ticket, MapPin, Sparkles, ArrowLeft } from 'lucide-react';
+import { Flame, Ticket, MapPin, Sparkles, ArrowLeft, Smartphone } from 'lucide-react';
 import { DevoteeUser } from '../types/yagya';
 import { YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
 
@@ -109,6 +109,17 @@ export const Header: React.FC<HeaderProps> = ({
             <Ticket className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
             <span>{currentUser ? currentUser.fullName.split(' ')[0] : 'मेरी बुकिंग'}</span>
           </button>
+
+          <a
+            href="/yagya2026.apk"
+            download="Bharat-Utkarsh-Mahayagya-2026.apk"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold border border-emerald-400/50 shadow-sm whitespace-nowrap text-[11px] min-[360px]:text-xs sm:text-sm"
+            title="एंड्रॉयड ऐप डाउनलोड करें (Direct APK)"
+          >
+            <Smartphone className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
+            <span className="hidden sm:inline">ऐप डाउनलोड</span>
+            <span className="sm:hidden">ऐप</span>
+          </a>
 
           <a
             href={YAGYA_LOCATION_MAP_URL}

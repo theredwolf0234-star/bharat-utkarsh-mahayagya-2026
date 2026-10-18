@@ -10,6 +10,7 @@ import {
   Compass,
   ExternalLink,
   Lock,
+  Smartphone,
 } from 'lucide-react';
 import { KundSummary, KundLiveItem } from '../types/yagya';
 import { YAGYA_DATES, VENUE_ADDRESS, YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
@@ -151,6 +152,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <Ticket className="w-4 h-4 shrink-0" />
               <span>मेरी बुकिंग व पास</span>
             </button>
+            <a
+              href="/yagya2026.apk"
+              download="Bharat-Utkarsh-Mahayagya-2026.apk"
+              className="w-full min-[480px]:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold text-xs sm:text-base rounded-xl shadow-lg border border-emerald-400/50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Smartphone className="w-4 h-4 text-white shrink-0" />
+              <span>📱 एंड्रॉयड ऐप डाउनलोड करें</span>
+            </a>
           </div>
         </div>
       </div>

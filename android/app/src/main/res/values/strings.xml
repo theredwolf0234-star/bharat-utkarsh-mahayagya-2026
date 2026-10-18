@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">भारत उत्कर्ष महायज्ञ 2026</string>
+    <string name="title_activity_main">भारत उत्कर्ष महायज्ञ 2026</string>
+    <string name="package_name">org.maharishi.bharatutkarsh2026</string>
+    <string name="custom_url_scheme">org.maharishi.bharatutkarsh2026</string>
+</resources>
