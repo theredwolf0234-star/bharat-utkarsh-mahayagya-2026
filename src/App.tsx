@@ -185,7 +185,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#faf5eb] flex flex-col justify-between text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
-      {/* Top Pure Vedic Header with Navigation and Stepper */}
+      {/* Top Pure Vedic Header with Navigation, Booking CTA, and Profile Menu Bar */}
       <Header
         currentView={currentView}
         setCurrentView={(view) => setCurrentView(view as 'home' | 'register' | 'tickets')}
@@ -194,7 +194,7 @@ export default function App() {
         currentUser={currentUser}
         onStartBooking={handleStartBooking}
         onOpenStatusLookup={() => setShowStatusModal(true)}
-        onOpenIntroSlides={() => setShowOpeningSlideshow(true)}
+        onOpenAdmin={() => setShowAdminModal(true)}
       />
 
       {/* Main Content Body */}
@@ -207,7 +207,6 @@ export default function App() {
             onStartBooking={handleStartBooking}
             onOpenTickets={() => setCurrentView('tickets')}
             onOpenStatusLookup={() => setShowStatusModal(true)}
-            onOpenIntroSlides={() => setShowOpeningSlideshow(true)}
           />
         )}
 

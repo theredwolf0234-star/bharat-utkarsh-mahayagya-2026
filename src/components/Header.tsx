@@ -1,5 +1,19 @@
-import React from 'react';
-import { Flame, Ticket, MapPin, Sparkles, ArrowLeft, Smartphone } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Flame,
+  Ticket,
+  MapPin,
+  ArrowLeft,
+  Smartphone,
+  Menu,
+  X,
+  User,
+  Search,
+  Home,
+  Shield,
+  ExternalLink,
+  ChevronRight,
+} from 'lucide-react';
 import { DevoteeUser } from '../types/yagya';
 import { YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
 
@@ -11,7 +25,7 @@ interface HeaderProps {
   currentUser: DevoteeUser | null;
   onStartBooking: (kundNum?: number | null) => void;
   onOpenStatusLookup: () => void;
-  onOpenIntroSlides?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,119 +36,227 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onStartBooking,
   onOpenStatusLookup,
-  onOpenIntroSlides,
+  onOpenAdmin,
 }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const handleNav = (action: () => void) => {
+    setIsMenuOpen(false);
+    action();
+  };
+
   return (
     <header className="sticky top-0 z-40 bg-[#240608] text-amber-100 border-b-2 border-amber-600/50 shadow-md">
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-1 sm:gap-2">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2">
         {/* Brand Logo & Event Name */}
         <button
           type="button"
           onClick={() => setCurrentView('home')}
-          className="flex items-center gap-1.5 sm:gap-3 hover:opacity-95 transition-opacity text-left cursor-pointer shrink-0"
+          className="flex items-center gap-2 hover:opacity-95 transition-opacity text-left cursor-pointer shrink-0"
         >
           <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-amber-600 to-orange-500 flex items-center justify-center text-white shadow-md border border-amber-300/40 shrink-0">
             <Flame className="w-4 h-4 sm:w-5 sm:h-5 fill-amber-200 text-amber-100" />
           </div>
           <div className="min-w-0">
-            <span className="font-serif font-black text-xs min-[360px]:text-sm sm:text-xl text-amber-200 tracking-wide block leading-tight whitespace-nowrap">
+            <span className="font-serif font-black text-sm sm:text-xl text-amber-200 tracking-wide block leading-tight whitespace-nowrap">
               भारत उत्कर्ष महायज्ञ 2026
             </span>
-            <span className="text-[11px] text-amber-300/80 font-medium hidden sm:block">
-              "राष्ट्र के उत्कर्ष में ही आपका उत्कर्ष" • 108 हवन कुंड बुकिंग
+            <span className="text-[11px] text-amber-300/80 font-medium hidden md:block">
+              108 हवन कुंड बुकिंग पोर्टल • रामलीला मैदान, महर्षि आश्रम, नोएडा
             </span>
           </div>
         </button>
 
-        {/* User Nav Items (Dedicated for Devotees only) */}
-        <nav className="flex items-center gap-1 sm:gap-2 text-[11px] min-[360px]:text-xs sm:text-sm font-medium shrink-0">
-          <button
-            type="button"
-            onClick={() => setCurrentView('home')}
-            className={`px-1.5 min-[360px]:px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer whitespace-nowrap ${
-              currentView === 'home'
-                ? 'bg-amber-500/25 text-amber-200 font-bold border border-amber-400/40 shadow-sm'
-                : 'text-stone-300 hover:text-amber-200 hover:bg-black/30'
-            }`}
-          >
-            मुख्य पृष्ठ
-          </button>
-
+        {/* Clean Top Action Bar (No Double/Crowded Tabs) */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Direct Hawan Kund Booking CTA */}
           <button
             type="button"
             onClick={() => onStartBooking(null)}
-            className={`px-1.5 min-[360px]:px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 rounded-xl transition-all cursor-pointer font-bold text-xs sm:text-sm whitespace-nowrap shadow-sm ${
               currentView === 'register'
-                ? 'bg-[#8a1523] text-white font-bold border border-amber-400/60 shadow-sm'
-                : 'text-stone-300 hover:text-amber-200 hover:bg-black/30'
+                ? 'bg-[#8a1523] text-white border-2 border-amber-400'
+                : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-stone-950 font-extrabold border border-amber-300'
             }`}
           >
-            <Flame className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-orange-400 shrink-0" />
-            <span className="hidden sm:inline">हवन कुंड बुकिंग</span>
-            <span className="sm:hidden">बुकिंग</span>
+            <Flame className="w-3.5 h-3.5 fill-current shrink-0" />
+            <span className="hidden min-[400px]:inline">हवन कुंड बुकिंग</span>
+            <span className="min-[400px]:hidden">बुकिंग</span>
           </button>
 
-          {onOpenIntroSlides && (
-            <button
-              type="button"
-              onClick={onOpenIntroSlides}
-              className="flex items-center gap-1 px-1.5 min-[360px]:px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer bg-gradient-to-r from-amber-600/30 to-orange-600/30 hover:from-amber-600/40 hover:to-orange-600/40 text-amber-200 border border-amber-400/40 whitespace-nowrap"
-              title="महायज्ञ पावन आमंत्रण एवं आकर्षण देखें"
-            >
-              <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300 shrink-0" />
-              <span className="hidden sm:inline">पावन आमंत्रण</span>
-              <span className="sm:hidden">पत्रिका</span>
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onOpenStatusLookup}
-            className="flex items-center gap-1 px-1.5 min-[360px]:px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-400/30 whitespace-nowrap"
-            title="अपनी बुकिंग व भुगतान स्थिति जांचें"
-          >
-            <span className="text-amber-300 font-bold text-xs sm:text-sm">🔍</span>
-            <span className="hidden md:inline">स्थिति जांचें</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCurrentView('tickets')}
-            className={`flex items-center gap-1 sm:gap-1.5 px-1.5 min-[360px]:px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer whitespace-nowrap ${
-              currentView === 'tickets'
-                ? 'bg-amber-400 text-stone-950 font-bold shadow-sm'
-                : 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 border border-amber-400/30'
-            }`}
-          >
-            <Ticket className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
-            <span>{currentUser ? currentUser.fullName.split(' ')[0] : 'मेरी बुकिंग'}</span>
-          </button>
-
+          {/* Direct APK Download Button */}
           <a
             href="/yagya2026.apk"
             download="Bharat-Utkarsh-Mahayagya-2026.apk"
-            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl transition-all cursor-pointer bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold border border-emerald-400/50 shadow-sm whitespace-nowrap text-[11px] min-[360px]:text-xs sm:text-sm"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold border border-emerald-400/50 shadow-sm whitespace-nowrap text-xs sm:text-sm"
             title="एंड्रॉयड ऐप डाउनलोड करें (Direct APK)"
           >
-            <Smartphone className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
-            <span className="hidden sm:inline">ऐप डाउनलोड</span>
+            <Smartphone className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">📱 ऐप डाउनलोड</span>
             <span className="sm:hidden">ऐप</span>
           </a>
 
-          <a
-            href={YAGYA_LOCATION_MAP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden lg:flex items-center gap-1 text-stone-300 hover:text-amber-200 transition-colors px-2 py-1 rounded-lg hover:bg-black/30"
-            title="Google Maps पर यज्ञ स्थल"
-          >
-            <MapPin className="w-3.5 h-3.5 text-rose-500" />
-            <span>स्थल मार्ग</span>
-          </a>
-        </nav>
+          {/* Sleek Profile & Menu Bar Button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer border shadow-xs text-xs sm:text-sm font-semibold whitespace-nowrap ${
+                isMenuOpen
+                  ? 'bg-amber-400 text-stone-950 border-amber-300 font-bold'
+                  : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-400/40'
+              }`}
+              title="यजमान प्रोफाइल एवं मेन्यू"
+              aria-label="Toggle Navigation Menu"
+            >
+              <div className="w-5 h-5 rounded-full bg-amber-400/30 flex items-center justify-center text-amber-200 shrink-0">
+                <User className="w-3 h-3 text-current" />
+              </div>
+              <span className="max-w-[80px] min-[420px]:max-w-[120px] truncate">
+                {currentUser ? currentUser.fullName.split(' ')[0] : 'प्रोफाइल'}
+              </span>
+              {isMenuOpen ? (
+                <X className="w-3.5 h-3.5 text-current shrink-0" />
+              ) : (
+                <Menu className="w-3.5 h-3.5 text-current shrink-0" />
+              )}
+            </button>
+
+            {/* Profile & Menu Dropdown Modal */}
+            {isMenuOpen && (
+              <>
+                {/* Backdrop overlay */}
+                <div
+                  className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs"
+                  onClick={() => setIsMenuOpen(false)}
+                />
+
+                {/* Dropdown Card */}
+                <div className="fixed sm:absolute right-2 sm:right-0 top-16 z-50 w-[92vw] max-w-xs sm:w-80 bg-stone-900 border-2 border-amber-500/60 rounded-2xl shadow-2xl overflow-hidden text-stone-100 animate-in fade-in slide-in-from-top-2 duration-150">
+                  {/* Devotee Profile Header */}
+                  <div className="bg-gradient-to-r from-[#4a0e17] to-[#240608] p-3.5 border-b border-amber-600/40">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-stone-950 font-bold shadow-md border border-amber-300/60 shrink-0">
+                        <User className="w-5 h-5 text-stone-950" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-serif font-bold text-sm text-amber-200 truncate">
+                          {currentUser ? currentUser.fullName : 'यजमान प्रोफाइल'}
+                        </h4>
+                        <p className="text-xs text-amber-300/80 truncate">
+                          {currentUser ? `मो: ${currentUser.mobile}` : 'पंजीकरण एवं ई-पास पोर्टल'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setIsMenuOpen(false)}
+                        className="text-stone-400 hover:text-white p-1 rounded-lg hover:bg-white/10"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Menu Links */}
+                  <div className="p-2 space-y-1 text-xs sm:text-sm">
+                    <button
+                      type="button"
+                      onClick={() => handleNav(() => setCurrentView('home'))}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-amber-500/20 text-stone-200 hover:text-amber-200 transition-colors cursor-pointer text-left"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Home className="w-4 h-4 text-amber-400" />
+                        <span>मुख्य पृष्ठ (Home)</span>
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleNav(() => onStartBooking(null))}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-amber-500/20 text-stone-200 hover:text-amber-200 transition-colors cursor-pointer text-left"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Flame className="w-4 h-4 text-orange-400" />
+                        <span>108 हवन कुंड बुकिंग</span>
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleNav(() => setCurrentView('tickets'))}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-amber-500/20 text-stone-200 hover:text-amber-200 transition-colors cursor-pointer text-left"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Ticket className="w-4 h-4 text-amber-400" />
+                        <span>मेरी बुकिंग व डिजिटल पास</span>
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleNav(onOpenStatusLookup)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-amber-500/20 text-stone-200 hover:text-amber-200 transition-colors cursor-pointer text-left"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Search className="w-4 h-4 text-amber-400" />
+                        <span>आरक्षण व भुगतान स्थिति जांचें</span>
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                    </button>
+
+                    <a
+                      href={YAGYA_LOCATION_MAP_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-amber-500/20 text-stone-200 hover:text-amber-200 transition-colors cursor-pointer text-left"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <MapPin className="w-4 h-4 text-rose-400" />
+                        <span>यज्ञ स्थल मार्ग (Google Maps)</span>
+                      </span>
+                      <ExternalLink className="w-3.5 h-3.5 text-stone-500" />
+                    </a>
+
+                    <a
+                      href="/yagya2026.apk"
+                      download="Bharat-Utkarsh-Mahayagya-2026.apk"
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 transition-colors cursor-pointer text-left border border-emerald-600/40"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Smartphone className="w-4 h-4 text-emerald-400" />
+                        <span>📱 एंड्रॉयड ऐप डाउनलोड (.apk)</span>
+                      </span>
+                      <span className="text-[10px] bg-emerald-500 text-stone-950 px-1.5 py-0.5 rounded font-bold">
+                        4.2 MB
+                      </span>
+                    </a>
+
+                    {onOpenAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleNav(onOpenAdmin)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-amber-500/20 text-stone-300 hover:text-amber-200 transition-colors cursor-pointer text-left border-t border-stone-800 mt-1 pt-2.5"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Shield className="w-4 h-4 text-amber-500" />
+                          <span>व्यवस्थापक लॉगिन (Admin)</span>
+                        </span>
+                        <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Hawan Kund Booking Flow Stepper with Previous Arrow */}
+      {/* Hawan Kund Booking Flow Stepper with Previous Arrow (Only shown during active booking) */}
       {currentView === 'register' && (
         <div className="bg-[#fcf5e9] border-t border-b border-[#e8d8be] py-2 px-2 sm:px-3 text-stone-800 overflow-x-auto no-scrollbar">
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-2.5 sm:gap-3 min-w-max sm:min-w-0 text-xs sm:text-sm font-semibold">

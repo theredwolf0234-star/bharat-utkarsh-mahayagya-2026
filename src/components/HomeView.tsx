@@ -22,7 +22,6 @@ interface HomeViewProps {
   onStartBooking: (kundNum: number | null) => void;
   onOpenTickets: () => void;
   onOpenStatusLookup: () => void;
-  onOpenIntroSlides?: () => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -32,7 +31,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onStartBooking,
   onOpenTickets,
   onOpenStatusLookup,
-  onOpenIntroSlides,
 }) => {
   const [searchKund, setSearchKund] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -129,15 +127,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <Flame className="w-4 h-4 fill-stone-950 shrink-0" />
               <span>हवन कुंड ऑनलाइन बुक करें</span>
             </button>
-            {onOpenIntroSlides && (
-              <button
-                onClick={onOpenIntroSlides}
-                className="w-full min-[480px]:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-stone-950 font-bold text-xs sm:text-base rounded-xl shadow-lg border border-amber-300 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4 text-stone-950 shrink-0" />
-                <span>पावन आमंत्रण (Flyer)</span>
-              </button>
-            )}
             <button
               onClick={onOpenStatusLookup}
               className="w-full min-[480px]:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold text-xs sm:text-base rounded-xl border border-amber-300/50 transition-all flex items-center justify-center gap-2 cursor-pointer"
