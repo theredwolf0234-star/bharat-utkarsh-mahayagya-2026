@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import initSqlJs from 'sql.js';
 import { createClient } from '@supabase/supabase-js';
 
@@ -193,6 +194,18 @@ export async function initSqliteDatabase() {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_devotee_mobile ON devotee_users(mobile);
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      target_type TEXT NOT NULL,
+      identifier TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      used INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_pwd_reset_ident ON password_reset_tokens(identifier, used);
   `);
 
   // Migrate existing table columns if opened from older disk version
@@ -246,6 +259,21 @@ export async function initSqliteDatabase() {
         upi_id = 'yespay.bizsbiz296352@yesbankltd' 
     WHERE id = 'default';
   `);
+
+  try {
+    const adminCheck = dbInstance.exec("SELECT COUNT(*) as cnt FROM admin_users");
+    const count = adminCheck.length > 0 && adminCheck[0].values.length > 0 ? Number(adminCheck[0].values[0][0]) : 0;
+    if (count === 0) {
+      const paymentKey = process.env.PAYMENT_SECRET_KEY || 'MAHARISHI_YAGYA_SECURE_KEY_2026_V1';
+      const defaultHash = crypto.createHmac('sha256', paymentKey).update('admin123').digest('hex');
+      dbInstance.run(`
+        INSERT INTO admin_users (id, username, password_hash, role, created_at)
+        VALUES ('master-admin', 'maharishi_admin', '${defaultHash}', 'super_admin', '${new Date().toISOString()}');
+      `);
+    }
+  } catch (e) {
+    console.warn('Note on admin seeding:', e);
+  }
 
   saveSqliteToDisk();
   isInitialized = true;
@@ -492,6 +520,237 @@ export function getDevoteeUserById(id: string): DbDevoteeUser | null {
     console.error('Error finding devotee by id:', e);
     return null;
   }
+}
+
+export function getDevoteeUserByEmail(email: string): DbDevoteeUser | null {
+  if (!dbInstance) return null;
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    const stmt = dbInstance.prepare(`SELECT * FROM devotee_users WHERE LOWER(email) = :email LIMIT 1`);
+    stmt.bind({ ':email': cleanEmail });
+    let user: DbDevoteeUser | null = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      user = {
+        id: String(row.id),
+        fullName: String(row.full_name),
+        mobile: String(row.mobile),
+        passwordHash: String(row.password_hash),
+        email: row.email ? String(row.email) : undefined,
+        city: row.city ? String(row.city) : undefined,
+        gotra: row.gotra ? String(row.gotra) : undefined,
+        createdAt: String(row.created_at),
+      };
+    }
+    stmt.free();
+    return user;
+  } catch (e) {
+    console.error('Error finding devotee by email:', e);
+    return null;
+  }
+}
+
+export function getDevoteeUserByIdentifier(ident: string): DbDevoteeUser | null {
+  const trimmed = ident.trim();
+  if (trimmed.includes('@')) {
+    return getDevoteeUserByEmail(trimmed);
+  }
+  const cleanMobile = trimmed.replace(/\D/g, '').slice(-10);
+  if (cleanMobile.length === 10) {
+    return getDevoteeUserByMobile(cleanMobile);
+  }
+  return null;
+}
+
+export function updateDevoteePassword(mobile: string, newPasswordHash: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
+    const stmt = dbInstance.prepare(`
+      UPDATE devotee_users 
+      SET password_hash = :hash 
+      WHERE mobile = :mobile
+    `);
+    stmt.run({
+      ':hash': newPasswordHash,
+      ':mobile': cleanMobile,
+    });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error updating devotee password:', e);
+    return false;
+  }
+}
+
+export function updateAdminPassword(username: string, newPasswordHash: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const cleanUser = username.trim();
+    const stmt = dbInstance.prepare(`
+      INSERT INTO admin_users (id, username, password_hash, role, created_at)
+      VALUES ('master-admin', :username, :hash, 'super_admin', :created_at)
+      ON CONFLICT(id) DO UPDATE SET 
+        password_hash = excluded.password_hash,
+        username = excluded.username;
+    `);
+    stmt.run({
+      ':username': cleanUser,
+      ':hash': newPasswordHash,
+      ':created_at': new Date().toISOString(),
+    });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error updating admin password:', e);
+    return false;
+  }
+}
+
+export function getAdminUserFromDb(): { username: string; passwordHash: string; createdAt: string } | null {
+  if (!dbInstance) return null;
+  try {
+    const stmt = dbInstance.prepare(`SELECT username, password_hash, created_at FROM admin_users WHERE id = 'master-admin' LIMIT 1`);
+    let result = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      result = {
+        username: String(row.username),
+        passwordHash: String(row.password_hash),
+        createdAt: String(row.created_at),
+      };
+    }
+    stmt.free();
+    return result;
+  } catch (e) {
+    console.error('Error fetching admin user from SQLite:', e);
+    return null;
+  }
+}
+
+export function savePasswordResetToken(data: {
+  id: string;
+  targetType: 'user' | 'admin';
+  identifier: string;
+  tokenHash: string;
+  expiresAt: string;
+}): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`
+      INSERT INTO password_reset_tokens (id, target_type, identifier, token_hash, expires_at, attempts, used, created_at)
+      VALUES (:id, :target_type, :identifier, :token_hash, :expires_at, 0, 0, :created_at)
+    `);
+    stmt.run({
+      ':id': data.id,
+      ':target_type': data.targetType,
+      ':identifier': data.identifier,
+      ':token_hash': data.tokenHash,
+      ':expires_at': data.expiresAt,
+      ':created_at': new Date().toISOString(),
+    });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error saving password reset token:', e);
+    return false;
+  }
+}
+
+export function getActivePasswordResetToken(
+  identifier: string,
+  tokenHash: string
+): { id: string; targetType: string; attempts: number; expiresAt: string } | null {
+  if (!dbInstance) return null;
+  try {
+    const now = new Date().toISOString();
+    const stmt = dbInstance.prepare(`
+      SELECT id, target_type, attempts, expires_at 
+      FROM password_reset_tokens 
+      WHERE identifier = :identifier 
+        AND token_hash = :token_hash 
+        AND used = 0 
+        AND expires_at > :now 
+        AND attempts < 5 
+      ORDER BY datetime(created_at) DESC 
+      LIMIT 1
+    `);
+    stmt.bind({
+      ':identifier': identifier,
+      ':token_hash': tokenHash,
+      ':now': now,
+    });
+    let result = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      result = {
+        id: String(row.id),
+        targetType: String(row.target_type),
+        attempts: Number(row.attempts),
+        expiresAt: String(row.expires_at),
+      };
+    }
+    stmt.free();
+    return result;
+  } catch (e) {
+    console.error('Error getting active reset token:', e);
+    return null;
+  }
+}
+
+export function incrementResetTokenAttempts(id: string): number {
+  if (!dbInstance) return 0;
+  try {
+    dbInstance.run(`UPDATE password_reset_tokens SET attempts = attempts + 1 WHERE id = '${id}'`);
+    saveSqliteToDisk();
+    return 1;
+  } catch (e) {
+    return 0;
+  }
+}
+
+export function markPasswordResetTokenUsed(id: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    dbInstance.run(`UPDATE password_reset_tokens SET used = 1 WHERE id = '${id}'`);
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export function countRecentResetRequests(identifier: string, windowMinutes: number = 60): number {
+  if (!dbInstance) return 0;
+  try {
+    const cutoff = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
+    const stmt = dbInstance.prepare(`
+      SELECT COUNT(*) as cnt 
+      FROM password_reset_tokens 
+      WHERE identifier = :identifier AND created_at > :cutoff
+    `);
+    stmt.bind({ ':identifier': identifier, ':cutoff': cutoff });
+    let count = 0;
+    if (stmt.step()) {
+      count = Number(stmt.getAsObject().cnt || 0);
+    }
+    stmt.free();
+    return count;
+  } catch (e) {
+    return 0;
+  }
+}
+
+export function cleanupExpiredResetTokens(): void {
+  if (!dbInstance) return;
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    dbInstance.run(`DELETE FROM password_reset_tokens WHERE expires_at < '${cutoff}' OR used = 1`);
+    saveSqliteToDisk();
+  } catch (e) {}
 }
 
 // Devotee private tickets - ONLY returns tickets belonging to this devotee

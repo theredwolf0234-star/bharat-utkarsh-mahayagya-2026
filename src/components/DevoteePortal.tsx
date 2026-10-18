@@ -18,7 +18,10 @@ import {
   ChevronRight, 
   Eye, 
   EyeOff,
-  AlertCircle
+  AlertCircle,
+  Mail,
+  ArrowLeft,
+  Send
 } from 'lucide-react';
 import { Registration, DevoteeUser } from '../types/yagya';
 import { Language, translations } from '../utils/i18n';
@@ -45,7 +48,7 @@ export const DevoteePortal: React.FC<Props> = ({
 }) => {
   const t = translations[lang] || translations.hi;
 
-  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'search'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'search' | 'forgot'>('login');
   const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -53,6 +56,17 @@ export const DevoteePortal: React.FC<Props> = ({
   const [city, setCity] = useState('नोएडा');
   const [gotra, setGotra] = useState('');
   const [email, setEmail] = useState('');
+
+  // Forgot Password state
+  const [forgotStep, setForgotStep] = useState<'request' | 'verify' | 'reset'>('request');
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [resetAuthToken, setResetAuthToken] = useState('');
+  const [forgotNotice, setForgotNotice] = useState('');
+  const [forgotDebugCode, setForgotDebugCode] = useState('');
 
   // Lookup state
   const [searchToken, setSearchToken] = useState('');
@@ -130,6 +144,129 @@ export const DevoteePortal: React.FC<Props> = ({
       localStorage.setItem('yagya_devotee_user', JSON.stringify(data.user));
       onUserLogin(data.user, data.token);
       setSuccessMsg('स्वागत है! आपका खाता सफलतापूर्वक लॉगिन हुआ।');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'नेटवर्क त्रुटि।');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Forgot Password: Request OTP
+  const handleRequestReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+    setForgotNotice('');
+    setForgotDebugCode('');
+
+    const cleanIdent = forgotIdentifier.trim();
+    if (!cleanIdent) {
+      setErrorMsg('कृपया अपना पंजीकृत मोबाइल नंबर या ईमेल आईडी दर्ज करें।');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/user/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanIdent }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.error || 'अनुरोध विफल रहा।');
+        return;
+      }
+
+      setSuccessMsg(data.message || 'सत्यापन कोड भेज दिया गया है।');
+      if (data.requiredConfigNotice) {
+        setForgotNotice(data.requiredConfigNotice);
+      }
+      if (data.debugCode) {
+        setForgotDebugCode(data.debugCode);
+      }
+      setForgotStep('verify');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'नेटवर्क त्रुटि।');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Forgot Password: Verify OTP
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const cleanOtp = forgotOtp.trim();
+    if (!cleanOtp || cleanOtp.length < 4) {
+      setErrorMsg('कृपया 6 अंकों का OTP सत्यापन कोड दर्ज करें।');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/user/verify-reset-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: forgotIdentifier.trim(), otp: cleanOtp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.error || 'OTP सत्यापन विफल रहा।');
+        return;
+      }
+
+      setResetAuthToken(data.resetAuthToken);
+      setSuccessMsg(data.message || 'सत्यापन सफल! अब नया पासवर्ड बनाएं।');
+      setForgotStep('reset');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'नेटवर्क त्रुटि।');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Forgot Password: Set New Password
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    if (forgotNewPassword.length < 6) {
+      setErrorMsg('सुरक्षा नियम: नया पासवर्ड न्यूनतम 6 अक्षरों का होना आवश्यक है।');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setErrorMsg('पासवर्ड और पुष्टि पासवर्ड मेल नहीं खाते।');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/user/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resetAuthToken,
+          newPassword: forgotNewPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMsg(data.error || 'पासवर्ड रीसेट विफल रहा।');
+        return;
+      }
+
+      setSuccessMsg('🎉 पासवर्ड सफलतापूर्वक बदल दिया गया है! कृपया नए पासवर्ड से लॉगिन करें।');
+      setAuthMode('login');
+      setPassword('');
+      setForgotStep('request');
+      setForgotOtp('');
+      setForgotNewPassword('');
+      setForgotConfirmPassword('');
+      setResetAuthToken('');
     } catch (err: any) {
       setErrorMsg(err.message || 'नेटवर्क त्रुटि।');
     } finally {
@@ -526,38 +663,55 @@ export const DevoteePortal: React.FC<Props> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex border-b border-stone-200 bg-stone-50">
-          <button
-            onClick={() => { setAuthMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
-            className={`flex-1 py-3 text-xs sm:text-sm font-bold text-center border-b-2 transition-all cursor-pointer ${
-              authMode === 'login'
-                ? 'border-[#872e18] text-[#872e18] bg-white'
-                : 'border-transparent text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            लॉगिन करें (Login)
-          </button>
-          <button
-            onClick={() => { setAuthMode('signup'); setErrorMsg(''); setSuccessMsg(''); }}
-            className={`flex-1 py-3 text-xs sm:text-sm font-bold text-center border-b-2 transition-all cursor-pointer ${
-              authMode === 'signup'
-                ? 'border-[#872e18] text-[#872e18] bg-white'
-                : 'border-transparent text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            नया खाता बनाएं (Sign Up)
-          </button>
-          <button
-            onClick={() => { setAuthMode('search'); setErrorMsg(''); setSuccessMsg(''); }}
-            className={`flex-1 py-3 text-xs sm:text-sm font-bold text-center border-b-2 transition-all cursor-pointer ${
-              authMode === 'search'
-                ? 'border-[#872e18] text-[#872e18] bg-white'
-                : 'border-transparent text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            टोकन पास खोजें
-          </button>
-        </div>
+        {authMode === 'forgot' ? (
+          <div className="flex items-center justify-between px-6 py-3.5 border-b border-stone-200 bg-amber-50/70">
+            <button
+              type="button"
+              onClick={() => { setAuthMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
+              className="text-xs font-bold text-[#872e18] flex items-center gap-1.5 hover:underline cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>लॉगिन पेज पर वापस जाएं</span>
+            </button>
+            <span className="text-xs font-bold text-stone-700 flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+              सुरक्षित खाता रिकवरी
+            </span>
+          </div>
+        ) : (
+          <div className="flex border-b border-stone-200 bg-stone-50">
+            <button
+              onClick={() => { setAuthMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
+              className={`flex-1 py-3 text-xs sm:text-sm font-bold text-center border-b-2 transition-all cursor-pointer ${
+                authMode === 'login'
+                  ? 'border-[#872e18] text-[#872e18] bg-white'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              लॉगिन करें (Login)
+            </button>
+            <button
+              onClick={() => { setAuthMode('signup'); setErrorMsg(''); setSuccessMsg(''); }}
+              className={`flex-1 py-3 text-xs sm:text-sm font-bold text-center border-b-2 transition-all cursor-pointer ${
+                authMode === 'signup'
+                  ? 'border-[#872e18] text-[#872e18] bg-white'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              नया खाता बनाएं (Sign Up)
+            </button>
+            <button
+              onClick={() => { setAuthMode('search'); setErrorMsg(''); setSuccessMsg(''); }}
+              className={`flex-1 py-3 text-xs sm:text-sm font-bold text-center border-b-2 transition-all cursor-pointer ${
+                authMode === 'search'
+                  ? 'border-[#872e18] text-[#872e18] bg-white'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              टोकन पास खोजें
+            </button>
+          </div>
+        )}
 
         <div className="p-6">
           {errorMsg && (
@@ -618,6 +772,23 @@ export const DevoteePortal: React.FC<Props> = ({
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                <div className="flex justify-end mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('forgot');
+                      setErrorMsg('');
+                      setSuccessMsg('');
+                      setForgotNotice('');
+                      setForgotDebugCode('');
+                      setForgotStep('request');
+                      setForgotIdentifier(mobile || '');
+                    }}
+                    className="text-xs text-[#872e18] hover:text-[#5e190b] font-bold hover:underline cursor-pointer"
+                  >
+                    पासवर्ड भूल गए? (Forgot Password?)
+                  </button>
+                </div>
               </div>
 
               <button
@@ -644,6 +815,219 @@ export const DevoteePortal: React.FC<Props> = ({
                 </button>
               </div>
             </form>
+          )}
+
+          {/* 4. FORGOT PASSWORD FLOW */}
+          {authMode === 'forgot' && (
+            <div className="space-y-4 animate-in fade-in duration-200">
+              {/* Step indicator */}
+              <div className="flex items-center justify-between text-[11px] font-bold pb-2 border-b border-stone-200">
+                <span className={`flex items-center gap-1 ${forgotStep === 'request' ? 'text-[#872e18]' : 'text-stone-400'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center ${forgotStep === 'request' ? 'bg-[#872e18] text-white' : 'bg-stone-100'}`}>1</span>
+                  पहचान सत्यापन
+                </span>
+                <span className="text-stone-300">→</span>
+                <span className={`flex items-center gap-1 ${forgotStep === 'verify' ? 'text-[#872e18]' : 'text-stone-400'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center ${forgotStep === 'verify' ? 'bg-[#872e18] text-white' : 'bg-stone-100'}`}>2</span>
+                  OTP कोड
+                </span>
+                <span className="text-stone-300">→</span>
+                <span className={`flex items-center gap-1 ${forgotStep === 'reset' ? 'text-[#872e18]' : 'text-stone-400'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center ${forgotStep === 'reset' ? 'bg-[#872e18] text-white' : 'bg-stone-100'}`}>3</span>
+                  नया पासवर्ड
+                </span>
+              </div>
+
+              {/* Informational Notice if server delivery requires configuration */}
+              {forgotNotice && (
+                <div className="bg-amber-50 border border-amber-300 text-stone-800 text-xs p-3 rounded-xl space-y-1">
+                  <div className="font-bold text-[#872e18] flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    <span>सर्वर सूचना (Delivery Status)</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-stone-600 whitespace-pre-line">
+                    {forgotNotice}
+                  </p>
+                </div>
+              )}
+
+              {/* Debug Testing Code Badge if available in testing mode */}
+              {forgotDebugCode && (
+                <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs p-3 rounded-xl flex items-center justify-between">
+                  <div>
+                    <span className="font-bold">सत्यापन परीक्षण कोड: </span>
+                    <span className="font-mono text-base font-extrabold tracking-widest text-[#872e18] ml-1">
+                      {forgotDebugCode}
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                    परीक्षण मोड
+                  </span>
+                </div>
+              )}
+
+              {/* STEP 1: Request OTP */}
+              {forgotStep === 'request' && (
+                <form onSubmit={handleRequestReset} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1.5">
+                      पंजीकृत मोबाइल नंबर अथवा ईमेल आईडी:
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={forgotIdentifier}
+                        onChange={(e) => setForgotIdentifier(e.target.value)}
+                        placeholder="10 अंकों का मोबाइल नंबर या email@domain.com"
+                        className="w-full pl-4 pr-4 py-2.5 rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-[#872e18] text-sm"
+                        required
+                      />
+                    </div>
+                    <p className="text-[11px] text-stone-500 mt-1">
+                      सुरक्षा नियम: आपके खाते की पहचान गोपनीय रखी जाएगी।
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full bg-[#872e18] hover:bg-[#6b2210] text-amber-200 font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                  >
+                    {isLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4 text-amber-300" />
+                    )}
+                    <span>सत्यापन OTP कोड प्राप्त करें</span>
+                  </button>
+
+                  <div className="text-center pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
+                      className="text-xs font-bold text-stone-600 hover:text-[#872e18] hover:underline cursor-pointer"
+                    >
+                      लॉगिन पेज पर वापस जाएं
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* STEP 2: Verify OTP */}
+              {forgotStep === 'verify' && (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-xs">
+                    <span className="text-stone-500">पहचानकर्ता: </span>
+                    <span className="font-bold text-stone-800">{forgotIdentifier}</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1.5">
+                      6-अंकों का OTP कोड दर्ज करें:
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={forgotOtp}
+                      onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                      className="w-full text-center tracking-widest text-lg font-mono font-bold py-2.5 rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-[#872e18]"
+                      required
+                    />
+                    <p className="text-[11px] text-stone-500 mt-1">
+                      यह कोड 10 मिनट के लिए मान्य है एवं केवल 1 बार उपयोग किया जा सकता है।
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full bg-[#872e18] hover:bg-[#6b2210] text-amber-200 font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                  >
+                    {isLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="w-4 h-4 text-amber-300" />
+                    )}
+                    <span>OTP सत्यापित करें</span>
+                  </button>
+
+                  <div className="flex justify-between text-xs pt-1">
+                    <button
+                      type="button"
+                      onClick={() => { setForgotStep('request'); setErrorMsg(''); }}
+                      className="text-stone-500 hover:text-stone-800 hover:underline cursor-pointer"
+                    >
+                      पहचान बदलें
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRequestReset}
+                      disabled={isLoading}
+                      className="text-[#872e18] font-bold hover:underline cursor-pointer"
+                    >
+                      पुनः कोड भेजें
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* STEP 3: Set New Password */}
+              {forgotStep === 'reset' && (
+                <form onSubmit={handleResetPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1.5">
+                      नया गुप्त पासवर्ड (न्यूनतम 6 अक्षर):
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showForgotNewPassword ? 'text' : 'password'}
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        placeholder="कम से कम 6 अक्षरों का नया पासवर्ड"
+                        className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-[#872e18] text-sm"
+                        required
+                        minLength={6}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotNewPassword(!showForgotNewPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-700"
+                      >
+                        {showForgotNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-stone-700 mb-1.5">
+                      नए पासवर्ड की पुष्टि करें:
+                    </label>
+                    <input
+                      type={showForgotNewPassword ? 'text' : 'password'}
+                      value={forgotConfirmPassword}
+                      onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                      placeholder="वही पासवर्ड पुनः दर्ज करें"
+                      className="w-full pl-4 pr-4 py-2.5 rounded-xl border border-stone-300 focus:outline-hidden focus:ring-2 focus:ring-[#872e18] text-sm"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                  >
+                    {isLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="w-4 h-4 text-emerald-200" />
+                    )}
+                    <span>पासवर्ड बदलें और सुरक्षित करें</span>
+                  </button>
+                </form>
+              )}
+            </div>
           )}
 
           {/* 2. SIGNUP FORM */}

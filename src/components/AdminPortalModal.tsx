@@ -47,9 +47,24 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   onOpenSlip,
 }) => {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [adminUsername, setAdminUsername] = useState('');
+  const [adminUsername, setAdminUsername] = useState('maharishi_admin');
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [adminToken, setAdminToken] = useState(() => localStorage.getItem('maharishi_admin_token') || 'maharishi_master_session_token');
+
+  // Admin Account Recovery state
+  const [showAdminRecovery, setShowAdminRecovery] = useState(false);
+  const [recoveryMethod, setRecoveryMethod] = useState<'key' | 'email'>('key');
+  const [adminRecoveryKey, setAdminRecoveryKey] = useState('');
+  const [adminRecoveryEmail, setAdminRecoveryEmail] = useState('');
+  const [adminRecoveryOtp, setAdminRecoveryOtp] = useState('');
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [adminRecoveryMsg, setAdminRecoveryMsg] = useState('');
+  const [adminRecoverySuccess, setAdminRecoverySuccess] = useState('');
+  const [adminOtpSent, setAdminOtpSent] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
 
   const [adminTab, setAdminTab] = useState<'pending' | 'bookings' | 'locks' | 'database' | 'audit'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,11 +82,12 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const [sqlResult, setSqlResult] = useState<{ columns: string[]; rows: (string | number)[][] } | null>(null);
   const [isFetchingServer, setIsFetchingServer] = useState(false);
 
-  const fetchActiveLocks = async () => {
+  const fetchActiveLocks = async (customToken?: string) => {
     try {
+      const token = customToken || adminToken || localStorage.getItem('maharishi_admin_token') || 'maharishi_master_session_token';
       const res = await fetch('/api/admin/locks', {
         headers: {
-          Authorization: 'Bearer maharishi_master_session_token',
+          Authorization: `Bearer ${token}`,
         },
       });
       if (res.ok) {
@@ -88,10 +104,11 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
   const handleForceReleaseLock = async (lockId: string, kundNumber: number) => {
     if (!window.confirm(`क्या आप हवन कुंड #${kundNumber} के इस 5-मिनट लॉक को हटाकर तुरंत मुक्त करना चाहते हैं?`)) return;
     try {
+      const token = adminToken || localStorage.getItem('maharishi_admin_token') || 'maharishi_master_session_token';
       const res = await fetch(`/api/admin/locks/${lockId}/release`, {
         method: 'POST',
         headers: {
-          Authorization: 'Bearer maharishi_master_session_token',
+          Authorization: `Bearer ${token}`,
         },
       });
       if (res.ok) {
@@ -103,12 +120,13 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
-  const fetchServerBookings = async () => {
+  const fetchServerBookings = async (customToken?: string) => {
     setIsFetchingServer(true);
     try {
+      const token = customToken || adminToken || localStorage.getItem('maharishi_admin_token') || 'maharishi_master_session_token';
       const res = await fetch('/api/admin/bookings', {
         headers: {
-          Authorization: 'Bearer maharishi_master_session_token',
+          Authorization: `Bearer ${token}`,
         },
       });
       if (res.ok) {
@@ -117,7 +135,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
           setRegistrations(data.bookings);
         }
       }
-      fetchActiveLocks();
+      fetchActiveLocks(token);
     } catch (e) {
       console.warn('Failed to fetch server bookings:', e);
     } finally {
@@ -125,15 +143,122 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
     }
   };
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    if (adminUsername.trim() === 'maharishi_admin' && adminPassword === 'admin123') {
+    setIsLoggingIn(true);
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: adminUsername.trim(),
+          password: adminPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLoginError(data.error || 'अमान्य व्यवस्थापक यूज़रनेम अथवा पासवर्ड।');
+        return;
+      }
+
+      setAdminToken(data.token);
+      localStorage.setItem('maharishi_admin_token', data.token);
       setIsAdminLoggedIn(true);
-      fetchServerBookings();
-      fetchActiveLocks();
-    } else {
-      setLoginError('अमान्य व्यवस्थापक यूज़रनेम अथवा पासवर्ड। कृपया सही क्रेडेंशियल्स दर्ज करें।');
+      fetchServerBookings(data.token);
+      fetchActiveLocks(data.token);
+    } catch (err: any) {
+      setLoginError(err.message || 'लॉगिन में नेटवर्क त्रुटि हुई।');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleRequestAdminOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminRecoveryMsg('');
+    setAdminRecoverySuccess('');
+    setIsRecovering(true);
+    try {
+      const res = await fetch('/api/admin/request-recovery-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: adminRecoveryEmail.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminRecoveryMsg(data.error || 'सत्यापन कोड भेजने में त्रुटि।');
+        return;
+      }
+      setAdminRecoverySuccess(data.message || 'सत्यापन कोड भेज दिया गया है।');
+      if (data.debugCode) {
+        setAdminRecoveryOtp(data.debugCode);
+      }
+      setAdminOtpSent(true);
+    } catch (err: any) {
+      setAdminRecoveryMsg(err.message || 'नेटवर्क त्रुटि।');
+    } finally {
+      setIsRecovering(false);
+    }
+  };
+
+  const handleAdminPasswordRecover = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminRecoveryMsg('');
+    setAdminRecoverySuccess('');
+
+    if (adminNewPassword.length < 6) {
+      setAdminRecoveryMsg('नया पासवर्ड न्यूनतम 6 अक्षरों का होना अनिवार्य है।');
+      return;
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      setAdminRecoveryMsg('पासवर्ड और पुष्टि पासवर्ड मेल नहीं खाते।');
+      return;
+    }
+
+    setIsRecovering(true);
+    try {
+      const payload: any = { newPassword: adminNewPassword };
+      if (recoveryMethod === 'key') {
+        if (!adminRecoveryKey.trim()) {
+          setAdminRecoveryMsg('कृपया सर्वर व्यवस्थापक रिकवरी कुंजी दर्ज करें।');
+          setIsRecovering(false);
+          return;
+        }
+        payload.recoveryKey = adminRecoveryKey.trim();
+      } else {
+        if (!adminRecoveryOtp.trim()) {
+          setAdminRecoveryMsg('कृपया अधिकृत ईमेल पर प्राप्त OTP कोड दर्ज करें।');
+          setIsRecovering(false);
+          return;
+        }
+        payload.recoveryCode = adminRecoveryOtp.trim();
+      }
+
+      const res = await fetch('/api/admin/recover-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminRecoveryMsg(data.error || 'रिकवरी विफल रही।');
+        return;
+      }
+
+      setAdminPassword(adminNewPassword);
+      setAdminRecoverySuccess('🎉 ' + (data.message || 'व्यवस्थापक पासवर्ड सफलतापूर्वक रीसेट हो गया है!'));
+      setTimeout(() => {
+        setShowAdminRecovery(false);
+        setAdminRecoveryKey('');
+        setAdminRecoveryOtp('');
+        setAdminNewPassword('');
+        setAdminConfirmPassword('');
+      }, 2500);
+    } catch (err: any) {
+      setAdminRecoveryMsg(err.message || 'नेटवर्क त्रुटि।');
+    } finally {
+      setIsRecovering(false);
     }
   };
 
@@ -395,38 +520,251 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                   </div>
                 )}
 
-                <form onSubmit={handleAdminLogin} className="space-y-3.5">
-                  <div>
-                    <label className="block text-xs font-bold text-stone-700 mb-1">व्यवस्थापक यूज़रनेम *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="यूज़रनेम दर्ज करें"
-                      value={adminUsername}
-                      onChange={(e) => setAdminUsername(e.target.value)}
-                      className="w-full text-xs sm:text-sm px-3 py-2.5 border border-stone-300 rounded-xl bg-white"
-                    />
-                  </div>
+                {showAdminRecovery ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between pb-2 border-b border-stone-200">
+                      <h5 className="text-sm font-bold text-stone-900">व्यवस्थापक खाता रिकवरी</h5>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminRecovery(false)}
+                        className="text-xs text-stone-500 hover:text-stone-800 hover:underline cursor-pointer"
+                      >
+                        ← लॉगिन पर वापस जाएं
+                      </button>
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-stone-700 mb-1">पासवर्ड *</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="पासवर्ड दर्ज करें"
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      className="w-full text-xs sm:text-sm px-3 py-2.5 border border-stone-300 rounded-xl bg-white"
-                    />
-                  </div>
+                    {adminRecoveryMsg && (
+                      <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800">
+                        {adminRecoveryMsg}
+                      </div>
+                    )}
+                    {adminRecoverySuccess && (
+                      <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 font-bold">
+                        {adminRecoverySuccess}
+                      </div>
+                    )}
 
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-sm rounded-xl shadow-md cursor-pointer transition-all"
-                  >
-                    प्रशासक पोर्टल खोलें
-                  </button>
-                </form>
+                    {/* Method Switcher */}
+                    <div className="flex rounded-xl bg-stone-100 p-1 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setRecoveryMethod('key')}
+                        className={`flex-1 py-1.5 font-bold rounded-lg transition-all cursor-pointer ${
+                          recoveryMethod === 'key' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500'
+                        }`}
+                      >
+                        सर्वर रिकवरी कुंजी
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRecoveryMethod('email')}
+                        className={`flex-1 py-1.5 font-bold rounded-lg transition-all cursor-pointer ${
+                          recoveryMethod === 'email' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500'
+                        }`}
+                      >
+                        अधिकृत ईमेल OTP
+                      </button>
+                    </div>
+
+                    {recoveryMethod === 'key' ? (
+                      <form onSubmit={handleAdminPasswordRecover} className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-bold text-stone-700 mb-1">
+                            सर्वर मास्टर रिकवरी कुंजी (Server Recovery Key) *
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="सर्वर पर स्थित रिकवरी कुंजी (data/admin-recovery.key)"
+                            value={adminRecoveryKey}
+                            onChange={(e) => setAdminRecoveryKey(e.target.value)}
+                            className="w-full text-xs px-3 py-2 border border-stone-300 rounded-xl bg-white font-mono"
+                          />
+                          <p className="text-[10px] text-stone-500 mt-1">
+                            यह कुंजी सर्वर फ़ाइल `data/admin-recovery.key` अथवा पर्यावरण चर `ADMIN_RECOVERY_KEY` में सुरक्षित है।
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-stone-700 mb-1">
+                            नया व्यवस्थापक पासवर्ड (न्यूनतम 6 अक्षर) *
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            minLength={6}
+                            placeholder="नया गुप्त पासवर्ड"
+                            value={adminNewPassword}
+                            onChange={(e) => setAdminNewPassword(e.target.value)}
+                            className="w-full text-xs px-3 py-2 border border-stone-300 rounded-xl bg-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-stone-700 mb-1">
+                            नए पासवर्ड की पुष्टि करें *
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="वही पासवर्ड दोबारा दर्ज करें"
+                            value={adminConfirmPassword}
+                            onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                            className="w-full text-xs px-3 py-2 border border-stone-300 rounded-xl bg-white"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={isRecovering}
+                          className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all"
+                        >
+                          {isRecovering ? 'अपडेट हो रहा है...' : 'नया पासवर्ड सुरक्षित रूप से सहेजें'}
+                        </button>
+                      </form>
+                    ) : (
+                      <div className="space-y-3">
+                        {!adminOtpSent ? (
+                          <form onSubmit={handleRequestAdminOtp} className="space-y-3">
+                            <div>
+                              <label className="block text-xs font-bold text-stone-700 mb-1">
+                                अधिकृत व्यवस्थापक ईमेल (ADMIN_RECOVERY_EMAIL) *
+                              </label>
+                              <input
+                                type="email"
+                                required
+                                placeholder="अधिकृत व्यवस्थापक ईमेल"
+                                value={adminRecoveryEmail}
+                                onChange={(e) => setAdminRecoveryEmail(e.target.value)}
+                                className="w-full text-xs px-3 py-2 border border-stone-300 rounded-xl bg-white"
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              disabled={isRecovering}
+                              className="w-full py-2.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all"
+                            >
+                              {isRecovering ? 'भेज रहा है...' : '6-अंकों का सत्यापन कोड भेजें'}
+                            </button>
+                          </form>
+                        ) : (
+                          <form onSubmit={handleAdminPasswordRecover} className="space-y-3">
+                            <div>
+                              <label className="block text-xs font-bold text-stone-700 mb-1">
+                                6-अंकों का व्यवस्थापक OTP कोड *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                maxLength={6}
+                                placeholder="123456"
+                                value={adminRecoveryOtp}
+                                onChange={(e) => setAdminRecoveryOtp(e.target.value.replace(/\D/g, ''))}
+                                className="w-full text-center font-mono font-bold tracking-widest text-sm px-3 py-2 border border-stone-300 rounded-xl bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-stone-700 mb-1">
+                                नया पासवर्ड (न्यूनतम 6 अक्षर) *
+                              </label>
+                              <input
+                                type="password"
+                                required
+                                minLength={6}
+                                placeholder="नया गुप्त पासवर्ड"
+                                value={adminNewPassword}
+                                onChange={(e) => setAdminNewPassword(e.target.value)}
+                                className="w-full text-xs px-3 py-2 border border-stone-300 rounded-xl bg-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-stone-700 mb-1">
+                                नए पासवर्ड की पुष्टि करें *
+                              </label>
+                              <input
+                                type="password"
+                                required
+                                placeholder="वही पासवर्ड दोबारा दर्ज करें"
+                                value={adminConfirmPassword}
+                                onChange={(e) => setAdminConfirmPassword(e.target.value)}
+                                className="w-full text-xs px-3 py-2 border border-stone-300 rounded-xl bg-white"
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              disabled={isRecovering}
+                              className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all"
+                            >
+                              {isRecovering ? 'अपडेट हो रहा है...' : 'पासवर्ड रीसेट करें'}
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Server-side CLI Recovery Notice */}
+                    <div className="bg-amber-50/80 border border-amber-300 rounded-xl p-3 text-stone-800 text-[11px] space-y-1">
+                      <div className="font-bold text-[#8a1523] flex items-center gap-1">
+                        <span>⚡ सर्वर-साइड डायरेक्ट CLI रीसेट (Server-Side Recovery):</span>
+                      </div>
+                      <p className="text-stone-600">
+                        यदि आप सर्वर टर्मिनल में हैं, तो सीधे यह कमांड चला सकते हैं:
+                      </p>
+                      <code className="block bg-stone-900 text-amber-300 p-2 rounded-lg font-mono text-[10px] select-all overflow-x-auto">
+                        npm run admin:reset-password &lt;नया-पासवर्ड&gt;
+                      </code>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleAdminLogin} className="space-y-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">व्यवस्थापक यूज़रनेम *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="यूज़रनेम दर्ज करें"
+                        value={adminUsername}
+                        onChange={(e) => setAdminUsername(e.target.value)}
+                        className="w-full text-xs sm:text-sm px-3 py-2.5 border border-stone-300 rounded-xl bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">पासवर्ड *</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="पासवर्ड दर्ज करें"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                        className="w-full text-xs sm:text-sm px-3 py-2.5 border border-stone-300 rounded-xl bg-white"
+                      />
+                      <div className="flex justify-end mt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAdminRecovery(true);
+                            setLoginError('');
+                            setAdminRecoveryMsg('');
+                            setAdminRecoverySuccess('');
+                          }}
+                          className="text-xs text-[#8a1523] hover:underline font-semibold cursor-pointer"
+                        >
+                          पासवर्ड भूल गए? (Admin Recovery)
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isLoggingIn}
+                      className="w-full py-2.5 bg-[#8a1523] hover:bg-[#70101b] text-white font-bold text-sm rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+                    >
+                      {isLoggingIn && <RefreshCw className="w-4 h-4 animate-spin" />}
+                      <span>प्रशासक पोर्टल खोलें</span>
+                    </button>
+                  </form>
+                )}
               </div>
             </div>
           ) : (
@@ -755,7 +1093,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                       </span>
                       <button
                         type="button"
-                        onClick={fetchActiveLocks}
+                        onClick={() => fetchActiveLocks()}
                         className="p-2 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl cursor-pointer"
                         title="लॉक्स ताज़ा करें"
                       >

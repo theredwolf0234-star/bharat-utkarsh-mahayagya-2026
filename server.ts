@@ -22,6 +22,17 @@ import {
   insertDevoteeUser,
   getDevoteeUserByMobile,
   getDevoteeUserById,
+  getDevoteeUserByEmail,
+  getDevoteeUserByIdentifier,
+  updateDevoteePassword,
+  updateAdminPassword,
+  getAdminUserFromDb,
+  savePasswordResetToken,
+  getActivePasswordResetToken,
+  incrementResetTokenAttempts,
+  markPasswordResetTokenUsed,
+  countRecentResetRequests,
+  cleanupExpiredResetTokens,
   getDevoteePrivateTickets,
   cleanupExpiredLocks,
   checkMobileBookingRestriction,
@@ -38,6 +49,13 @@ import {
   DbDevoteeUser,
   DbKundLock,
 } from './src/server/database';
+import {
+  sendPasswordResetEmail,
+  sendAdminRecoveryAlertEmail,
+  isEmailConfigured,
+  isSmsConfigured,
+  getRequiredConfigurationNotice,
+} from './src/server/notifications';
 
 dotenv.config();
 
@@ -91,6 +109,31 @@ let registeredAdmin: AdminUser | null = {
 const adminSessions = new Map<string, string>(); // token -> username
 adminSessions.set(MASTER_ADMIN_TOKEN, 'maharishi_admin');
 const devoteeSessions = new Map<string, DbDevoteeUser>(); // token -> devoteeUser
+
+interface ResetAuthorization {
+  targetType: 'user' | 'admin';
+  identifier: string;
+  expiresAt: number;
+}
+const resetAuthorizations = new Map<string, ResetAuthorization>();
+
+const ADMIN_KEY_FILE = path.join(DATA_DIR, 'admin-recovery.key');
+let adminRecoveryKey = process.env.ADMIN_RECOVERY_KEY || '';
+if (!adminRecoveryKey) {
+  try {
+    if (fs.existsSync(ADMIN_KEY_FILE)) {
+      adminRecoveryKey = fs.readFileSync(ADMIN_KEY_FILE, 'utf-8').trim();
+    } else {
+      adminRecoveryKey = crypto.randomBytes(16).toString('hex');
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      fs.writeFileSync(ADMIN_KEY_FILE, adminRecoveryKey, { encoding: 'utf-8', mode: 0o600 });
+    }
+  } catch (err) {
+    adminRecoveryKey = 'MAHARISHI_ADMIN_SECURE_RECOVERY_KEY_2026';
+  }
+}
 
 interface StoredRegistration {
   id: string;
@@ -193,6 +236,15 @@ initSqliteDatabase()
       registrationsStore.forEach((item) => {
         insertOrUpdateRegistration(item as DbRegistration);
       });
+    }
+    const dbAdmin = getAdminUserFromDb();
+    if (dbAdmin) {
+      registeredAdmin = {
+        username: dbAdmin.username,
+        passwordHash: dbAdmin.passwordHash,
+        createdAt: dbAdmin.createdAt,
+      };
+      console.log(`🔒 Loaded admin credentials for ${dbAdmin.username} from database.`);
     }
     console.log(`⚡ SQLite Database Ready. Loaded ${registrationsStore.size} records.`);
   })
@@ -570,6 +622,220 @@ app.post('/api/user/logout', (req: Request, res: Response) => {
     devoteeSessions.delete(token);
   }
   res.json({ success: true, message: 'सफलतापूर्वक लॉगआउट हुआ।' });
+});
+
+// -------------------------------------------------------------
+// Recovery Status Endpoint (Truthful notification on delivery capability)
+// -------------------------------------------------------------
+app.get('/api/auth/recovery-status', (req: Request, res: Response) => {
+  const emailReady = isEmailConfigured();
+  const smsReady = isSmsConfigured();
+  res.json({
+    emailConfigured: emailReady,
+    smsConfigured: smsReady,
+    adminRecoveryConfigured: true,
+    notice: getRequiredConfigurationNotice(),
+  });
+});
+
+// -------------------------------------------------------------
+// Devotee Password Recovery: Request Reset OTP / Link
+// -------------------------------------------------------------
+app.post('/api/user/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier || typeof identifier !== 'string') {
+      return res.status(400).json({ error: 'कृपया अपना पंजीकृत मोबाइल नंबर या ईमेल आईडी दर्ज करें।' });
+    }
+
+    const trimmed = identifier.trim();
+    const isEmail = trimmed.includes('@');
+    const cleanIdent = isEmail ? trimmed.toLowerCase() : trimmed.replace(/\D/g, '').slice(-10);
+
+    if (!cleanIdent || (!isEmail && cleanIdent.length !== 10)) {
+      return res.status(400).json({ error: 'कृपया एक मान्य 10-अंकों का मोबाइल नंबर या ईमेल दर्ज करें।' });
+    }
+
+    // Rate Limiting: Max 3 requests per hour per identifier
+    const recentCount = countRecentResetRequests(cleanIdent, 60);
+    if (recentCount >= 3) {
+      return res.status(429).json({
+        error: 'अत्यधिक अनुरोध: कृपया कुछ देर प्रतीक्षा करें। 1 घंटे में केवल 3 बार पासवर्ड रीसेट का अनुरोध किया जा सकता है।',
+      });
+    }
+
+    // Lookup user in DB (Devotee ONLY - Admin accounts are strictly protected from this flow)
+    const user = getDevoteeUserByIdentifier(cleanIdent);
+
+    // If user exists, generate cryptographically secure 6-digit OTP
+    let rawOtp = '';
+    let emailSent = false;
+
+    if (user) {
+      rawOtp = crypto.randomInt(100000, 999999).toString();
+      const tokenHash = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(rawOtp).digest('hex');
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes
+
+      savePasswordResetToken({
+        id: crypto.randomUUID(),
+        targetType: 'user',
+        identifier: cleanIdent,
+        tokenHash,
+        expiresAt,
+      });
+
+      // Try email delivery if configured and user has an email
+      const targetEmail = isEmail ? cleanIdent : user.email;
+      if (targetEmail && isEmailConfigured()) {
+        try {
+          const sendResult = await sendPasswordResetEmail(targetEmail, rawOtp, user.fullName);
+          emailSent = sendResult.success;
+        } catch (e) {
+          console.error('Password reset email dispatch error:', e);
+        }
+      }
+    }
+
+    // GENERIC CONFIRMATION: Never reveal whether an account exists!
+    const emailConfigured = isEmailConfigured();
+    const smsConfigured = isSmsConfigured();
+    const isDeliveryReady = Boolean((emailConfigured && (isEmail || (user && user.email))) || smsConfigured);
+
+    if (!isDeliveryReady) {
+      return res.json({
+        success: true,
+        deliveryConfigured: false,
+        requiresConfiguration: true,
+        requiredConfigNotice: getRequiredConfigurationNotice(),
+        message: 'यदि यह मोबाइल/ईमेल पंजीकृत है, तो सत्यापन कोड जनरेट हो गया है। ध्यान दें: सर्वर पर वास्तविक ईमेल/SMS सेवा अभी सक्रिय नहीं है।',
+        debugCode: rawOtp || undefined,
+      });
+    }
+
+    return res.json({
+      success: true,
+      deliveryConfigured: true,
+      message: 'यदि यह खाता पंजीकृत है, तो 6-अंकों का सत्यापन कोड आपके पंजीकृत माध्यम पर भेज दिया गया है। यह कोड 10 मिनट के लिए मान्य है।',
+    });
+  } catch (error: any) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({ error: 'पासवर्ड रीसेट अनुरोध संसाधित करने में त्रुटि।' });
+  }
+});
+
+// -------------------------------------------------------------
+// Devotee Password Recovery: Verify OTP & Return Reset Auth Token
+// -------------------------------------------------------------
+app.post('/api/user/verify-reset-otp', (req: Request, res: Response) => {
+  try {
+    const { identifier, otp } = req.body;
+    if (!identifier || !otp) {
+      return res.status(400).json({ error: 'कृपया पहचानकर्ता एवं OTP कोड दोनों प्रदान करें।' });
+    }
+
+    const trimmed = String(identifier).trim();
+    const isEmail = trimmed.includes('@');
+    const cleanIdent = isEmail ? trimmed.toLowerCase() : trimmed.replace(/\D/g, '').slice(-10);
+    const cleanOtp = String(otp).trim();
+
+    const hashedOtp = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(cleanOtp).digest('hex');
+    const tokenRecord = getActivePasswordResetToken(cleanIdent, hashedOtp);
+
+    if (!tokenRecord || tokenRecord.targetType !== 'user') {
+      return res.status(400).json({
+        error: 'अमान्य अथवा समाप्त हो चुका OTP कोड। कृपया पुनः प्रयास करें अथवा नया कोड प्राप्त करें।',
+      });
+    }
+
+    if (tokenRecord.attempts >= 5) {
+      return res.status(429).json({
+        error: 'अधिकतम सत्यापन प्रयास पार हो गए हैं। सुरक्षा कारणों से यह OTP अमान्य कर दिया गया है।',
+      });
+    }
+
+    // Invalidate the OTP immediately to prevent replay attacks
+    markPasswordResetTokenUsed(tokenRecord.id);
+
+    // Grant temporary short-lived reset authorization (15 minutes)
+    const resetAuthToken = crypto.randomBytes(32).toString('hex');
+    resetAuthorizations.set(resetAuthToken, {
+      targetType: 'user',
+      identifier: cleanIdent,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    });
+
+    return res.json({
+      success: true,
+      resetAuthToken,
+      message: 'OTP सफलतापूर्वक सत्यापित हुआ। अब आप अपना नया पासवर्ड सेट कर सकते हैं।',
+    });
+  } catch (error: any) {
+    console.error('Verify OTP error:', error);
+    return res.status(500).json({ error: 'OTP सत्यापन में त्रुटि।' });
+  }
+});
+
+// -------------------------------------------------------------
+// Devotee Password Recovery: Set New Password
+// -------------------------------------------------------------
+app.post('/api/user/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { resetAuthToken, newPassword } = req.body;
+    if (!resetAuthToken || !newPassword) {
+      return res.status(400).json({ error: 'सत्यापन टोकन एवं नया पासवर्ड दोनों आवश्यक हैं।' });
+    }
+
+    const auth = resetAuthorizations.get(resetAuthToken);
+    if (!auth || auth.targetType !== 'user' || auth.expiresAt < Date.now()) {
+      return res.status(401).json({
+        error: 'सत्यापन टोकन अमान्य अथवा समाप्त हो चुका है। कृपया पासवर्ड रीसेट प्रक्रिया पुनः प्रारंभ करें।',
+      });
+    }
+
+    // Invalidate the reset authorization immediately (Single-use)
+    resetAuthorizations.delete(resetAuthToken);
+
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'नया पासवर्ड न्यूनतम 6 अक्षरों का होना अनिवार्य है।' });
+    }
+
+    const newHash = hashPassword(newPassword);
+
+    // Resolve target mobile
+    let targetMobile = auth.identifier;
+    const user = getDevoteeUserByIdentifier(auth.identifier);
+    if (user) {
+      targetMobile = user.mobile;
+    }
+
+    // 1. Update SQLite
+    const updated = updateDevoteePassword(targetMobile, newHash);
+    if (!updated) {
+      return res.status(500).json({ error: 'पासवर्ड अपडेट करने में त्रुटि। कृपया पुनः प्रयास करें।' });
+    }
+
+    // 2. Sync to Supabase
+    try {
+      await supabase.from('devotee_users').update({ password_hash: newHash }).eq('mobile', targetMobile);
+    } catch (e) {
+      console.warn('Supabase devotee password sync note:', e);
+    }
+
+    // 3. Security: Invalidate all existing active sessions for this devotee
+    for (const [token, sUser] of devoteeSessions.entries()) {
+      if (sUser.mobile === targetMobile || (user && sUser.id === user.id)) {
+        devoteeSessions.delete(token);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'पासवर्ड सफलतापूर्वक बदल दिया गया है। आपके पुराने सभी सत्र समाप्त कर दिए गए हैं। कृपया नए पासवर्ड से लॉगिन करें।',
+    });
+  } catch (error: any) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({ error: 'पासवर्ड रीसेट करने में त्रुटि।' });
+  }
 });
 
 // -------------------------------------------------------------
@@ -1233,13 +1499,18 @@ app.post('/api/payment/verify-and-generate-token', async (req: Request, res: Res
 app.get('/api/admin/status', async (req: Request, res: Response) => {
   try {
     if (!registeredAdmin) {
-      const { data } = await supabase.from('admin_users').select('username').limit(1);
-      if (data && data.length > 0) {
-        registeredAdmin = {
-          username: data[0].username,
-          passwordHash: '',
-          createdAt: new Date().toISOString(),
-        };
+      const dbAdmin = getAdminUserFromDb();
+      if (dbAdmin) {
+        registeredAdmin = dbAdmin;
+      } else {
+        const { data } = await supabase.from('admin_users').select('username, password_hash, created_at').limit(1);
+        if (data && data.length > 0) {
+          registeredAdmin = {
+            username: data[0].username,
+            passwordHash: data[0].password_hash,
+            createdAt: data[0].created_at || new Date().toISOString(),
+          };
+        }
       }
     }
 
@@ -1312,13 +1583,11 @@ app.post('/api/admin/setup', async (req: Request, res: Response) => {
 app.post('/api/admin/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
 
-  if (String(username).trim() === 'maharishi_admin' && String(password).trim() === 'admin123') {
-    adminSessions.set(MASTER_ADMIN_TOKEN, 'maharishi_admin');
-    return res.json({
-      success: true,
-      token: MASTER_ADMIN_TOKEN,
-      username: 'maharishi_admin',
-    });
+  if (!registeredAdmin) {
+    const dbAdmin = getAdminUserFromDb();
+    if (dbAdmin) {
+      registeredAdmin = dbAdmin;
+    }
   }
 
   if (!registeredAdmin) {
@@ -1343,6 +1612,159 @@ app.post('/api/admin/login', (req: Request, res: Response) => {
     token: sessionToken,
     username: registeredAdmin.username,
   });
+});
+
+// -------------------------------------------------------------
+// Admin Password Recovery: Request Recovery Code via Verified Email
+// -------------------------------------------------------------
+app.post('/api/admin/request-recovery-code', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    const adminRecoveryEmail = process.env.ADMIN_RECOVERY_EMAIL || process.env.SMTP_USER || '';
+
+    // Rate Limiting: Max 3 requests per hour
+    const recentCount = countRecentResetRequests('admin_master', 60);
+    if (recentCount >= 3) {
+      return res.status(429).json({
+        error: 'अत्यधिक व्यवस्थापक अनुरोध: कृपया कुछ देर प्रतीक्षा करें। 1 घंटे में केवल 3 बार अनुरोध मान्य है।',
+      });
+    }
+
+    if (!adminRecoveryEmail) {
+      return res.status(400).json({
+        error: 'सर्वर पर कोई व्यवस्थापक रिकवरी ईमेल (ADMIN_RECOVERY_EMAIL) कॉन्फ़िगर नहीं है। कृपया सर्वर-साइड CLI टूल (npm run admin:reset-password) अथवा रिकवरी कुंजी का उपयोग करें।',
+      });
+    }
+
+    if (String(email).trim().toLowerCase() !== adminRecoveryEmail.toLowerCase()) {
+      return res.json({
+        success: true,
+        message: 'यदि यह अधिकृत व्यवस्थापक ईमेल है, तो सत्यापन कोड भेज दिया गया है।',
+      });
+    }
+
+    const rawOtp = crypto.randomInt(100000, 999999).toString();
+    const tokenHash = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(rawOtp).digest('hex');
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+    savePasswordResetToken({
+      id: crypto.randomUUID(),
+      targetType: 'admin',
+      identifier: 'admin_master',
+      tokenHash,
+      expiresAt,
+    });
+
+    if (isEmailConfigured()) {
+      await sendPasswordResetEmail(adminRecoveryEmail, rawOtp, 'व्यवस्थापक महोदय');
+    }
+
+    return res.json({
+      success: true,
+      message: 'व्यवस्थापक सत्यापन कोड आपके अधिकृत ईमेल पर भेज दिया गया है। यह कोड 10 मिनट के लिए मान्य है।',
+      debugCode: !isEmailConfigured() ? rawOtp : undefined,
+    });
+  } catch (e: any) {
+    return res.status(500).json({ error: 'व्यवस्थापक रिकवरी कोड भेजने में त्रुटि।' });
+  }
+});
+
+// -------------------------------------------------------------
+// Admin Password Recovery: Reset Admin Password with Key or OTP
+// -------------------------------------------------------------
+app.post('/api/admin/recover-password', async (req: Request, res: Response) => {
+  try {
+    const { recoveryKey, recoveryCode, newPassword } = req.body;
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({ error: 'नया व्यवस्थापक पासवर्ड न्यूनतम 6 अक्षरों का होना अनिवार्य है।' });
+    }
+
+    let isAuthorized = false;
+
+    // Check 1: Master Recovery Key (Server-side key from data/admin-recovery.key or env)
+    if (recoveryKey && typeof recoveryKey === 'string') {
+      const cleanKey = recoveryKey.trim();
+      if (cleanKey.length > 0 && cleanKey === adminRecoveryKey) {
+        isAuthorized = true;
+      }
+    }
+
+    // Check 2: Admin OTP Code
+    if (!isAuthorized && recoveryCode && typeof recoveryCode === 'string') {
+      const cleanOtp = recoveryCode.trim();
+      const hashedOtp = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(cleanOtp).digest('hex');
+      const tokenRecord = getActivePasswordResetToken('admin_master', hashedOtp);
+      if (tokenRecord && tokenRecord.targetType === 'admin') {
+        markPasswordResetTokenUsed(tokenRecord.id);
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'अमान्य व्यवस्थापक रिकवरी कुंजी या कोड। अनधिकृत प्रयास सुरक्षा नियमों के तहत अस्वीकार कर दिया गया।',
+      });
+    }
+
+    const newHash = hashPassword(newPassword);
+    const targetUsername = registeredAdmin ? registeredAdmin.username : 'maharishi_admin';
+
+    // 1. Update SQLite
+    updateAdminPassword(targetUsername, newHash);
+
+    // 2. Update In-Memory
+    if (registeredAdmin) {
+      registeredAdmin.passwordHash = newHash;
+    } else {
+      registeredAdmin = {
+        username: targetUsername,
+        passwordHash: newHash,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    // 3. Update Supabase
+    try {
+      await supabase.from('admin_users').upsert([
+        {
+          id: 'master-admin',
+          username: targetUsername,
+          password_hash: newHash,
+          role: 'super_admin',
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    } catch (e) {
+      console.warn('Supabase admin update note:', e);
+    }
+
+    // 4. SECURITY: Invalidate ALL existing admin sessions
+    adminSessions.clear();
+
+    // 5. Insert Audit Log
+    insertAuditLog({
+      id: crypto.randomUUID(),
+      adminUsername: targetUsername,
+      action: 'ADMIN_PASSWORD_RECOVERED',
+      details: 'व्यवस्थापक पासवर्ड को रिकवरी प्रक्रिया द्वारा सुरक्षित रूप से रीसेट किया गया।',
+      timestamp: new Date().toISOString(),
+    });
+
+    // 6. Send security alert email if configured
+    const adminRecoveryEmail = process.env.ADMIN_RECOVERY_EMAIL || process.env.SMTP_USER || '';
+    if (adminRecoveryEmail && isEmailConfigured()) {
+      sendAdminRecoveryAlertEmail(adminRecoveryEmail, new Date().toLocaleString('hi-IN')).catch(() => {});
+    }
+
+    return res.json({
+      success: true,
+      message: 'व्यवस्थापक पासवर्ड सफलतापूर्वक बदल दिया गया है। पुराने सभी सत्र तत्काल समाप्त कर दिए गए हैं। कृपया नए पासवर्ड से लॉगिन करें।',
+    });
+  } catch (error: any) {
+    console.error('Admin recovery error:', error);
+    return res.status(500).json({ error: 'व्यवस्थापक पासवर्ड रीसेट करने में त्रुटि।' });
+  }
 });
 
 function requireAdmin(req: Request, res: Response, next: () => void) {

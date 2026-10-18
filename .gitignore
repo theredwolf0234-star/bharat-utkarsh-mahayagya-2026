@@ -7,4 +7,5 @@ coverage/
 .env*
 !.env.example
 .vscode/
-
+data/*.key
+test-recovery.ts
