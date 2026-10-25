@@ -41,7 +41,7 @@ export const Footer: React.FC<FooterProps> = ({
           </button>
           <span>•</span>
           <button onClick={onOpenTickets} className="hover:text-amber-200 cursor-pointer py-1 px-1.5">
-            मेरी बुकिंग एवं पास
+            लॉगिन / नया खाता (Login)
           </button>
           <span>•</span>
           <a href={YAGYA_LOCATION_MAP_URL} target="_blank" rel="noreferrer" className="hover:text-amber-200 py-1 px-1.5">

@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Lock,
   Smartphone,
+  User,
 } from 'lucide-react';
 import { KundSummary, KundLiveItem } from '../types/yagya';
 import { YAGYA_DATES, VENUE_ADDRESS, YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
@@ -138,8 +139,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
               onClick={onOpenTickets}
               className="w-full min-[480px]:w-auto px-4 sm:px-6 py-2.5 sm:py-3 bg-white/10 hover:bg-white/20 text-stone-200 font-bold text-xs sm:text-base rounded-xl border border-white/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Ticket className="w-4 h-4 shrink-0" />
-              <span>मेरी बुकिंग व पास</span>
+              <User className="w-4 h-4 text-amber-300 shrink-0" />
+              <span>लॉगिन / नया पंजीकरण (Login)</span>
             </button>
             <a
               href="/yagya2026.apk"

@@ -131,8 +131,8 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="w-5 h-5 rounded-full bg-amber-400/30 flex items-center justify-center text-amber-200 shrink-0">
                 <User className="w-3 h-3 text-current" />
               </div>
-              <span className="hidden min-[440px]:inline max-w-[80px] sm:max-w-[120px] truncate">
-                {currentUser ? currentUser.fullName.split(' ')[0] : 'प्रोफाइल'}
+              <span className="hidden min-[400px]:inline max-w-[120px] sm:max-w-[150px] truncate">
+                {currentUser ? currentUser.fullName.split(' ')[0] : 'लॉगिन / रजिस्टर'}
               </span>
               {isMenuOpen ? (
                 <X className="w-3.5 h-3.5 text-current shrink-0" />
@@ -153,22 +153,31 @@ export const Header: React.FC<HeaderProps> = ({
                 {/* Dropdown Card */}
                 <div className="fixed sm:absolute right-2 sm:right-0 top-14 sm:top-16 z-50 w-[calc(100vw-16px)] max-w-xs sm:w-80 bg-stone-900 border-2 border-amber-500/60 rounded-2xl shadow-2xl overflow-hidden text-stone-100 max-h-[85vh] flex flex-col animate-in fade-in slide-in-from-top-2 duration-150">
                   {/* Devotee Profile Header */}
-                  <div className="bg-gradient-to-r from-[#4a0e17] to-[#240608] p-3.5 border-b border-amber-600/40 shrink-0">
+                  <div
+                    onClick={() => handleNav(() => setCurrentView('tickets'))}
+                    className="bg-gradient-to-r from-[#4a0e17] to-[#240608] p-3.5 border-b border-amber-600/40 shrink-0 cursor-pointer hover:bg-black/30 transition-colors"
+                    title={currentUser ? "साधक प्रोफाइल देखें" : "लॉगिन करें अथवा नया खाता बनाएं"}
+                  >
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-stone-950 font-bold shadow-md border border-amber-300/60 shrink-0">
                         <User className="w-5 h-5 text-stone-950" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <h4 className="font-serif font-bold text-sm text-amber-200 truncate">
-                          {currentUser ? currentUser.fullName : 'यजमान प्रोफाइल'}
+                          {currentUser ? currentUser.fullName : 'लॉगिन / नया पंजीकरण'}
                         </h4>
                         <p className="text-xs text-amber-300/80 truncate">
-                          {currentUser ? `मो: ${currentUser.mobile}` : 'पंजीकरण एवं ई-पास पोर्टल'}
+                          {currentUser ? `मो: +91 ${currentUser.mobile}` : 'साधक खाता खोलें या नया बनाएं'}
                         </p>
                       </div>
                       <button
-                        onClick={() => setIsMenuOpen(false)}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsMenuOpen(false);
+                        }}
                         className="text-stone-400 hover:text-white p-1 rounded-lg hover:bg-white/10"
+                        title="बंद करें"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -176,7 +185,39 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   {/* Menu Links */}
-                  <div className="p-2 space-y-1 text-xs sm:text-sm overflow-y-auto flex-1">
+                  <div className="p-2 space-y-1.5 text-xs sm:text-sm overflow-y-auto flex-1">
+                    {/* 1. TOP HIGHLIGHTED ITEM: LOGIN & REGISTER / ACCOUNT BUTTON */}
+                    <button
+                      type="button"
+                      onClick={() => handleNav(() => setCurrentView('tickets'))}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border shadow-sm transition-all cursor-pointer text-left ${
+                        currentUser
+                          ? 'bg-gradient-to-r from-emerald-950/60 to-stone-900 border-emerald-500/50 hover:bg-emerald-900/50 text-emerald-200'
+                          : 'bg-gradient-to-r from-amber-500/30 via-amber-600/20 to-amber-700/20 border-amber-400/60 hover:from-amber-500/40 hover:to-amber-600/30 text-amber-100 font-bold'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 shadow-xs ${
+                          currentUser ? 'bg-emerald-500 text-stone-950' : 'bg-gradient-to-tr from-amber-400 to-amber-300 text-stone-950'
+                        }`}>
+                          <User className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-bold text-xs sm:text-sm text-amber-200 block truncate">
+                            {currentUser ? 'साधक प्रोफाइल व बुकिंग (My Account)' : 'लॉगिन व नया पंजीकरण (Login & Register)'}
+                          </span>
+                          <span className="text-[10px] text-amber-300/80 block truncate">
+                            {currentUser ? 'ई-पास, रसीदें एवं खाता प्रबंधन' : 'साधक खाता लॉगिन अथवा नया खाता बनाएं'}
+                          </span>
+                        </div>
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold shrink-0 ${
+                        currentUser ? 'bg-emerald-500 text-stone-950' : 'bg-amber-400 text-stone-950'
+                      }`}>
+                        {currentUser ? 'खाता' : 'लॉगिन'}
+                      </span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => handleNav(() => setCurrentView('home'))}
@@ -197,18 +238,6 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className="flex items-center gap-2.5">
                         <Flame className="w-4 h-4 text-orange-400" />
                         <span>108 हवन कुंड बुकिंग</span>
-                      </span>
-                      <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleNav(() => setCurrentView('tickets'))}
-                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-amber-500/20 text-stone-200 hover:text-amber-200 transition-colors cursor-pointer text-left"
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <Ticket className="w-4 h-4 text-amber-400" />
-                        <span>मेरी बुकिंग व डिजिटल पास</span>
                       </span>
                       <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
                     </button>
