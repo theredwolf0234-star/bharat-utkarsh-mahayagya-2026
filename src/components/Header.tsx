@@ -13,6 +13,7 @@ import {
   Shield,
   ExternalLink,
   ChevronRight,
+  LogOut,
 } from 'lucide-react';
 import { DevoteeUser } from '../types/yagya';
 import { YAGYA_LOCATION_MAP_URL } from '../constants/yagya';
@@ -26,6 +27,7 @@ interface HeaderProps {
   onStartBooking: (kundNum?: number | null) => void;
   onOpenStatusLookup: () => void;
   onOpenAdmin?: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
   onStartBooking,
   onOpenStatusLookup,
   onOpenAdmin,
+  onLogout,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -260,6 +263,20 @@ export const Header: React.FC<HeaderProps> = ({
                         <span className="flex items-center gap-2.5">
                           <Shield className="w-4 h-4 text-amber-500" />
                           <span>व्यवस्थापक लॉगिन (Admin)</span>
+                        </span>
+                        <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
+                      </button>
+                    )}
+
+                    {currentUser && onLogout && (
+                      <button
+                        type="button"
+                        onClick={() => handleNav(onLogout)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-rose-950/60 text-rose-300 hover:text-rose-100 transition-colors cursor-pointer text-left border-t border-stone-800/80 mt-1 pt-2.5"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <LogOut className="w-4 h-4 text-rose-400" />
+                          <span>साधक लॉग आउट (Logout)</span>
                         </span>
                         <ChevronRight className="w-3.5 h-3.5 text-stone-500" />
                       </button>

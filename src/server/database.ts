@@ -53,6 +53,7 @@ export interface DbDevoteeUser {
   email?: string;
   city?: string;
   gotra?: string;
+  isVerified?: boolean;
   createdAt: string;
 }
 
@@ -191,9 +192,30 @@ export async function initSqliteDatabase() {
       email TEXT,
       city TEXT DEFAULT 'नोएडा',
       gotra TEXT,
+      is_verified INTEGER DEFAULT 1,
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_devotee_mobile ON devotee_users(mobile);
+
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_token ON user_sessions(token);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
+
+    CREATE TABLE IF NOT EXISTS account_verifications (
+      id TEXT PRIMARY KEY,
+      identifier TEXT NOT NULL,
+      user_data TEXT NOT NULL,
+      otp_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_acct_verif ON account_verifications(identifier);
 
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id TEXT PRIMARY KEY,
@@ -225,6 +247,10 @@ export async function initSqliteDatabase() {
       // Column already exists
     }
   });
+
+  try {
+    dbInstance.run(`ALTER TABLE devotee_users ADD COLUMN is_verified INTEGER DEFAULT 1;`);
+  } catch (e) {}
 
   dbInstance.run(`
 
@@ -580,6 +606,230 @@ export function updateDevoteePassword(mobile: string, newPasswordHash: string): 
     return true;
   } catch (e) {
     console.error('Error updating devotee password:', e);
+    return false;
+  }
+}
+
+// -------------------------------------------------------------
+// Devotee User Session Management (Persistent SQLite Sessions)
+// -------------------------------------------------------------
+export function saveUserSession(token: string, userId: string, expiresAt: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`
+      INSERT INTO user_sessions (token, user_id, expires_at, created_at)
+      VALUES (:token, :user_id, :expires_at, :created_at)
+      ON CONFLICT(token) DO UPDATE SET
+        expires_at = excluded.expires_at;
+    `);
+    stmt.run({
+      ':token': token,
+      ':user_id': userId,
+      ':expires_at': expiresAt,
+      ':created_at': new Date().toISOString(),
+    });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error saving user session:', e);
+    return false;
+  }
+}
+
+export function getUserBySessionToken(token: string): DbDevoteeUser | null {
+  if (!dbInstance) return null;
+  try {
+    const now = new Date().toISOString();
+    const stmt = dbInstance.prepare(`
+      SELECT user_id, expires_at 
+      FROM user_sessions 
+      WHERE token = :token AND expires_at > :now 
+      LIMIT 1
+    `);
+    stmt.bind({ ':token': token, ':now': now });
+    let userId: string | null = null;
+    if (stmt.step()) {
+      userId = String(stmt.getAsObject().user_id);
+    }
+    stmt.free();
+    if (!userId) return null;
+    return getDevoteeUserById(userId);
+  } catch (e) {
+    console.error('Error getting user by session token:', e);
+    return null;
+  }
+}
+
+export function deleteUserSession(token: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`DELETE FROM user_sessions WHERE token = :token`);
+    stmt.run({ ':token': token });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export function deleteAllUserSessions(userId: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`DELETE FROM user_sessions WHERE user_id = :user_id`);
+    stmt.run({ ':user_id': userId });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// -------------------------------------------------------------
+// Account Registration Verification OTPs
+// -------------------------------------------------------------
+export function saveAccountVerification(data: {
+  id: string;
+  identifier: string;
+  userData: string;
+  otpHash: string;
+  expiresAt: string;
+}): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`
+      INSERT INTO account_verifications (id, identifier, user_data, otp_hash, expires_at, attempts, created_at)
+      VALUES (:id, :identifier, :user_data, :otp_hash, :expires_at, 0, :created_at)
+    `);
+    stmt.run({
+      ':id': data.id,
+      ':identifier': data.identifier,
+      ':user_data': data.userData,
+      ':otp_hash': data.otpHash,
+      ':expires_at': data.expiresAt,
+      ':created_at': new Date().toISOString(),
+    });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error saving account verification:', e);
+    return false;
+  }
+}
+
+export function getAccountVerification(
+  identifier: string,
+  otpHash: string
+): { id: string; userData: string; expiresAt: string; attempts: number } | null {
+  if (!dbInstance) return null;
+  try {
+    const now = new Date().toISOString();
+    const stmt = dbInstance.prepare(`
+      SELECT id, user_data, expires_at, attempts 
+      FROM account_verifications 
+      WHERE identifier = :identifier AND otp_hash = :otp_hash AND expires_at > :now AND attempts < 5 
+      ORDER BY datetime(created_at) DESC 
+      LIMIT 1
+    `);
+    stmt.bind({
+      ':identifier': identifier,
+      ':otp_hash': otpHash,
+      ':now': now,
+    });
+    let result = null;
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      result = {
+        id: String(row.id),
+        userData: String(row.user_data),
+        expiresAt: String(row.expires_at),
+        attempts: Number(row.attempts),
+      };
+    }
+    stmt.free();
+    return result;
+  } catch (e) {
+    console.error('Error getting account verification:', e);
+    return null;
+  }
+}
+
+export function deleteAccountVerification(id: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`DELETE FROM account_verifications WHERE id = :id`);
+    stmt.run({ ':id': id });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// -------------------------------------------------------------
+// Devotee Profile Update & Deletion
+// -------------------------------------------------------------
+export function updateDevoteeProfile(
+  id: string,
+  updates: { fullName: string; email?: string; city?: string; gotra?: string }
+): boolean {
+  if (!dbInstance) return false;
+  try {
+    const stmt = dbInstance.prepare(`
+      UPDATE devotee_users 
+      SET full_name = :full_name,
+          email = :email,
+          city = :city,
+          gotra = :gotra
+      WHERE id = :id
+    `);
+    stmt.run({
+      ':id': id,
+      ':full_name': updates.fullName.trim(),
+      ':email': updates.email ? updates.email.trim() : null,
+      ':city': updates.city ? updates.city.trim() : 'नोएडा',
+      ':gotra': updates.gotra ? updates.gotra.trim() : null,
+    });
+    stmt.free();
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error updating devotee profile:', e);
+    return false;
+  }
+}
+
+export function deleteDevoteeAccount(userId: string): boolean {
+  if (!dbInstance) return false;
+  try {
+    // 1. Anonymize past registrations for operational audit compliance
+    const stmtAnonymize = dbInstance.prepare(`
+      UPDATE registrations 
+      SET full_name = 'निजी यजमान (खाता हटाया गया)',
+          husband_name = 'निजी यजमान',
+          wife_name = NULL,
+          email = NULL
+      WHERE user_id = :user_id
+    `);
+    stmtAnonymize.run({ ':user_id': userId });
+    stmtAnonymize.free();
+
+    // 2. Delete devotee record
+    const stmtDelete = dbInstance.prepare(`DELETE FROM devotee_users WHERE id = :user_id`);
+    stmtDelete.run({ ':user_id': userId });
+    stmtDelete.free();
+
+    // 3. Delete all sessions
+    deleteAllUserSessions(userId);
+
+    saveSqliteToDisk();
+    return true;
+  } catch (e) {
+    console.error('Error deleting devotee account:', e);
     return false;
   }
 }

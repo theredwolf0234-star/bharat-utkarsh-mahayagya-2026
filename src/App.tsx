@@ -210,6 +210,49 @@ export default function App() {
     []
   );
 
+  // Validate and restore persistent devotee session on startup
+  useEffect(() => {
+    const token = localStorage.getItem('yagya_devotee_token');
+    if (!token) return;
+
+    fetch('/api/user/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error('Invalid session');
+      })
+      .then((data) => {
+        if (data.success && data.user) {
+          setCurrentUser(data.user);
+          localStorage.setItem('yagya_devotee_user', JSON.stringify(data.user));
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('yagya_devotee_token');
+        localStorage.removeItem('yagya_devotee_user');
+        sessionStorage.removeItem('yagya_devotee_token');
+        setCurrentUser(null);
+      });
+  }, []);
+
+  const handleUserLogout = useCallback(async () => {
+    const token = localStorage.getItem('yagya_devotee_token');
+    if (token) {
+      try {
+        await fetch('/api/user/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (e) {}
+    }
+    localStorage.removeItem('yagya_devotee_token');
+    localStorage.removeItem('yagya_devotee_user');
+    sessionStorage.removeItem('yagya_devotee_token');
+    setCurrentUser(null);
+    navigateTo('home', 1, null);
+  }, [navigateTo]);
+
   // Popstate Listener: Native Mobile Back Gesture & Browser Back/Forward Handling
   useEffect(() => {
     // 1. Establish base state on page entry
@@ -417,6 +460,7 @@ export default function App() {
         onStartBooking={handleStartBooking}
         onOpenStatusLookup={() => navigateTo(currentView, currentStep, 'status')}
         onOpenAdmin={() => navigateTo(currentView, currentStep, 'admin')}
+        onLogout={handleUserLogout}
       />
 
       {/* Main Content Body */}
@@ -480,6 +524,8 @@ export default function App() {
               navigateTo('tickets', 1, 'slip');
             }}
             onBookNew={() => handleStartBooking(null)}
+            onLogout={handleUserLogout}
+            onGoHome={() => navigateTo('home', 1, null)}
           />
         )}
       </main>

@@ -25,6 +25,15 @@ import {
   getDevoteeUserByEmail,
   getDevoteeUserByIdentifier,
   updateDevoteePassword,
+  updateDevoteeProfile,
+  deleteDevoteeAccount,
+  saveUserSession,
+  getUserBySessionToken,
+  deleteUserSession,
+  deleteAllUserSessions,
+  saveAccountVerification,
+  getAccountVerification,
+  deleteAccountVerification,
   updateAdminPassword,
   getAdminUserFromDb,
   savePasswordResetToken,
@@ -52,6 +61,7 @@ import {
 import {
   sendPasswordResetEmail,
   sendAdminRecoveryAlertEmail,
+  sendAccountVerificationEmail,
   isEmailConfigured,
   isSmsConfigured,
   getRequiredConfigurationNotice,
@@ -181,7 +191,22 @@ function getAuthenticatedDevotee(req: Request): DbDevoteeUser | null {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.split(' ')[1];
-  return devoteeSessions.get(token) || null;
+
+  // 1. In-memory fast cache
+  const cached = devoteeSessions.get(token);
+  if (cached) return cached;
+
+  // 2. Persistent SQLite session table
+  try {
+    const dbUser = getUserBySessionToken(token);
+    if (dbUser) {
+      devoteeSessions.set(token, dbUser);
+      return dbUser;
+    }
+  } catch (e) {
+    console.error('Session retrieval error:', e);
+  }
+  return null;
 }
 
 function requireDevotee(req: Request, res: Response, next: () => void) {
@@ -503,49 +528,178 @@ app.post('/api/settings', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // API: Devotee User Authentication & Strict Privacy Tickets
 // -------------------------------------------------------------
+// -------------------------------------------------------------
+// API: Complete Devotee User Authentication & Account Management
+// -------------------------------------------------------------
+
+// 1. User Registration — Sign Up (Pre-verification stage)
 app.post('/api/user/signup', async (req: Request, res: Response) => {
   try {
-    const { fullName, mobile, password, email, city, gotra } = req.body;
-    if (!fullName || !mobile || !password) {
-      return res.status(400).json({ error: 'कृपया नाम, 10 अंकों का मोबाइल नंबर एवं पासवर्ड दर्ज करें।' });
+    const { fullName, mobile, email, password, confirmPassword, termsAccepted, city, gotra } = req.body;
+
+    // Field validations
+    if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
+      return res.status(400).json({ error: 'कृपया अपना पूरा नाम दर्ज करें (न्यूनतम 2 अक्षर)।' });
+    }
+    if (!mobile) {
+      return res.status(400).json({ error: 'कृपया 10 अंकों का वैध मोबाइल नंबर दर्ज करें।' });
     }
     const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
     if (cleanMobile.length !== 10) {
-      return res.status(400).json({ error: 'अमान्य मोबाइल नंबर! 10 अंकों का वैध नंबर दर्ज करें।' });
-    }
-    if (String(password).length < 4) {
-      return res.status(400).json({ error: 'पासवर्ड कम से कम 4 अक्षरों का होना चाहिए।' });
+      return res.status(400).json({ error: 'अमान्य मोबाइल नंबर! कृपया 10 अंकों का भारतीय मोबाइल नंबर दर्ज करें।' });
     }
 
-    const existing = getDevoteeUserByMobile(cleanMobile);
-    if (existing) {
-      return res.status(409).json({ error: 'इस मोबाइल नंबर पर पहले से खाता मौजूद है। कृपया लॉगिन करें।' });
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'कृपया एक वैध ईमेल आईडी दर्ज करें।' });
+    }
+    const cleanEmail = String(email).trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ error: 'अमान्य ईमेल प्रारूप! कृपया सही ईमेल पता दर्ज करें।' });
     }
 
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'पासवर्ड न्यूनतम 6 अक्षरों का होना अनिवार्य है।' });
+    }
+
+    if (confirmPassword !== undefined && password !== confirmPassword) {
+      return res.status(400).json({ error: 'पासवर्ड एवं पुष्टि पासवर्ड (Confirm Password) मेल नहीं खाते हैं।' });
+    }
+
+    const isTermsAccepted = Boolean(termsAccepted || req.body.agreeTerms);
+    if (!isTermsAccepted) {
+      return res.status(400).json({ error: 'कृपया नियम एवं गोपनीयता नीति (Terms & Privacy Policy) को स्वीकार करें।' });
+    }
+
+    // Duplicate Prevention: Check mobile
+    const existingMobile = getDevoteeUserByMobile(cleanMobile);
+    if (existingMobile) {
+      return res.status(409).json({ error: 'इस मोबाइल नंबर पर पहले से साधक खाता मौजूद है। कृपया लॉगिन करें अथवा "पासवर्ड भूल गए?" का उपयोग करें।' });
+    }
+
+    // Duplicate Prevention: Check email
+    const existingEmail = getDevoteeUserByEmail(cleanEmail);
+    if (existingEmail) {
+      return res.status(409).json({ error: 'यह ईमेल आईडी पहले से किसी खाते से जुड़ी है। कृपया दूसरा ईमेल उपयोग करें अथवा लॉगिन करें।' });
+    }
+
+    // Generate 6-digit OTP for account activation
+    const rawOtp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(rawOtp).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 mins
+
+    // Prepare pending user data
     const passHash = hashPassword(String(password));
-    const userId = `devotee-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
-    const user: DbDevoteeUser = {
-      id: userId,
+    const pendingUserData = {
+      id: `devotee-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
       fullName: String(fullName).trim(),
       mobile: cleanMobile,
+      email: cleanEmail,
       passwordHash: passHash,
-      email: email ? String(email).trim() : undefined,
       city: city ? String(city).trim() : 'नोएडा',
       gotra: gotra ? String(gotra).trim() : undefined,
       createdAt: new Date().toISOString(),
     };
 
+    // Save into account_verifications table in persistent SQLite
+    saveAccountVerification({
+      id: crypto.randomUUID(),
+      identifier: cleanMobile,
+      userData: JSON.stringify(pendingUserData),
+      otpHash,
+      expiresAt,
+    });
+
+    // Also index under email so user can verify via email
+    saveAccountVerification({
+      id: crypto.randomUUID(),
+      identifier: cleanEmail,
+      userData: JSON.stringify(pendingUserData),
+      otpHash,
+      expiresAt,
+    });
+
+    // Dispatch verification OTP via email/SMS service
+    let emailStatus = { success: false, deliveryConfigured: false, message: '' };
+    try {
+      emailStatus = await sendAccountVerificationEmail(cleanEmail, rawOtp, pendingUserData.fullName);
+    } catch (e: any) {
+      console.error('Email dispatch error on signup:', e);
+    }
+
+    const emailConfigured = isEmailConfigured();
+    const smsConfigured = isSmsConfigured();
+    const isDeliveryConfigured = emailConfigured || smsConfigured;
+    const isDev = process.env.NODE_ENV !== 'production' || process.env.TEST_MODE === 'true';
+
+    if (!isDeliveryConfigured) {
+      return res.status(200).json({
+        success: true,
+        requiresVerification: true,
+        identifier: cleanMobile,
+        email: cleanEmail,
+        deliveryConfigured: false,
+        message: 'खाता विवरण सुरक्षित दर्ज हुआ। ध्यान दें: सर्वर पर वास्तविक ईमेल/SMS सेवा अभी सक्रिय नहीं है।',
+        requiredConfigNotice: getRequiredConfigurationNotice(),
+        debugOtp: isDev ? rawOtp : undefined,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      requiresVerification: true,
+      identifier: cleanMobile,
+      email: cleanEmail,
+      deliveryConfigured: true,
+      message: '6-अंकों का सत्यापन कोड आपके पंजीकृत ईमेल पते पर भेज दिया गया है। कृपया कोड दर्ज कर खाता सक्रिय करें।',
+      debugOtp: isDev ? rawOtp : undefined,
+    });
+  } catch (err: any) {
+    console.error('Signup error:', err);
+    return res.status(500).json({ error: err.message || 'पंजीकरण अनुरोध संसाधित करने में त्रुटि।' });
+  }
+});
+
+// 2. User Account Activation: Verify Registration OTP
+app.post('/api/user/verify-signup-otp', async (req: Request, res: Response) => {
+  try {
+    const { identifier, otp } = req.body;
+    if (!identifier || !otp) {
+      return res.status(400).json({ error: 'कृपया पहचानकर्ता (मोबाइल/ईमेल) एवं 6-अंकों का OTP कोड दर्ज करें।' });
+    }
+
+    const cleanIdent = String(identifier).trim().toLowerCase();
+    const cleanMobile = cleanIdent.replace(/\D/g, '').slice(-10);
+    const lookupKey = cleanIdent.includes('@') ? cleanIdent : cleanMobile;
+    const cleanOtp = String(otp).trim();
+
+    const otpHash = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(cleanOtp).digest('hex');
+    const verif = getAccountVerification(lookupKey, otpHash);
+
+    if (!verif) {
+      return res.status(400).json({
+        error: 'अमान्य अथवा समाप्त हो चुका OTP कोड। कृपया पुनः प्रयास करें अथवा नया OTP प्राप्त करें।',
+      });
+    }
+
+    // Parse verified user data
+    const userData = JSON.parse(verif.userData);
+    const user: DbDevoteeUser = {
+      id: userData.id,
+      fullName: userData.fullName,
+      mobile: userData.mobile,
+      email: userData.email,
+      passwordHash: userData.passwordHash,
+      city: userData.city || 'नोएडा',
+      gotra: userData.gotra,
+      isVerified: true,
+      createdAt: userData.createdAt,
+    };
+
+    // Insert user into SQLite DB
     insertDevoteeUser(user);
 
-    // Link any existing bookings with this mobile to this user
-    registrationsStore.forEach((reg) => {
-      if (reg.mobile === cleanMobile && !reg.userId) {
-        reg.userId = userId;
-        insertOrUpdateRegistration(reg as DbRegistration);
-      }
-    });
-    saveToDisk();
-
+    // Sync to Supabase
     try {
       await supabase.from('devotee_users').upsert([
         {
@@ -561,8 +715,23 @@ app.post('/api/user/signup', async (req: Request, res: Response) => {
       ]);
     } catch (e) {}
 
+    // Link any existing bookings matching this mobile to this user ID
+    registrationsStore.forEach((reg) => {
+      if (reg.mobile === user.mobile && !reg.userId) {
+        reg.userId = user.id;
+        insertOrUpdateRegistration(reg as DbRegistration);
+      }
+    });
+    saveToDisk();
+
+    // Create secure persistent session (30 days)
     const sessionToken = crypto.randomBytes(32).toString('hex');
+    const sessionExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    saveUserSession(sessionToken, user.id, sessionExpiry);
     devoteeSessions.set(sessionToken, user);
+
+    // Clean up verification tokens
+    deleteAccountVerification(verif.id);
 
     return res.status(201).json({
       success: true,
@@ -574,53 +743,125 @@ app.post('/api/user/signup', async (req: Request, res: Response) => {
         email: user.email,
         city: user.city,
         gotra: user.gotra,
+        isVerified: true,
         createdAt: user.createdAt,
       },
-      message: 'खाता सफलतापूर्वक निर्मित हुआ।',
+      message: 'साधक खाता सफलतापूर्वक सत्यापित एवं सक्रिय हुआ। स्वागत है!',
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'पंजीकरण में त्रुटि।' });
+    console.error('Verify signup OTP error:', err);
+    return res.status(500).json({ error: 'सत्यापन प्रक्रिया में त्रुटि।' });
   }
 });
 
+// 3. Resend Registration OTP
+app.post('/api/user/resend-signup-otp', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier) {
+      return res.status(400).json({ error: 'कृपया मोबाइल अथवा ईमेल प्रदान करें।' });
+    }
+
+    const trimmed = String(identifier).trim();
+    const isEmail = trimmed.includes('@');
+    const cleanIdent = isEmail ? trimmed.toLowerCase() : trimmed.replace(/\D/g, '').slice(-10);
+
+    const rawOtp = crypto.randomInt(100000, 999999).toString();
+    const otpHash = crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(rawOtp).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+    const pendingUser = getAccountVerification(cleanIdent, '');
+    let userName = 'यजमान';
+    if (pendingUser) {
+      try {
+        const parsed = JSON.parse(pendingUser.userData);
+        userName = parsed.fullName || 'यजमान';
+      } catch (e) {}
+    }
+
+    // Try email delivery if applicable
+    if (isEmail && isEmailConfigured()) {
+      await sendAccountVerificationEmail(cleanIdent, rawOtp, userName);
+    }
+
+    const isDev = process.env.NODE_ENV !== 'production' || process.env.TEST_MODE === 'true';
+    return res.json({
+      success: true,
+      deliveryConfigured: isEmailConfigured() || isSmsConfigured(),
+      message: 'नया 6-अंकों का सत्यापन कोड प्रेषित कर दिया गया है।',
+      debugOtp: isDev ? rawOtp : undefined,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'OTP पुनः प्रेषण में त्रुटि।' });
+  }
+});
+
+// 4. User Login — Sign In (Supports Email OR Mobile Number)
 app.post('/api/user/login', (req: Request, res: Response) => {
-  const { mobile, password } = req.body;
-  if (!mobile || !password) {
-    return res.status(400).json({ error: 'कृपया मोबाइल नंबर एवं पासवर्ड दर्ज करें।' });
-  }
-  const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
-  const user = getDevoteeUserByMobile(cleanMobile);
-  if (!user) {
-    return res.status(404).json({ error: 'इस मोबाइल नंबर पर कोई खाता नहीं मिला। कृपया पहले साइन अप करें।' });
-  }
+  try {
+    const { identifier, mobile, email, password } = req.body;
+    const loginIdent = identifier || mobile || email;
 
-  const hash = hashPassword(String(password));
-  if (user.passwordHash !== hash) {
-    return res.status(401).json({ error: 'गलत पासवर्ड। कृपया पुनः प्रयास करें।' });
+    if (!loginIdent || !password) {
+      return res.status(400).json({ error: 'कृपया अपना मोबाइल नंबर या ईमेल और पासवर्ड दर्ज करें।' });
+    }
+
+    const cleanIdent = String(loginIdent).trim();
+    const user = getDevoteeUserByIdentifier(cleanIdent);
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'इस मोबाइल अथवा ईमेल पर कोई सक्रिय खाता नहीं मिला। कृपया पहले नया खाता बनाएं।',
+      });
+    }
+
+    const hash = hashPassword(String(password));
+    if (user.passwordHash !== hash) {
+      return res.status(401).json({
+        error: 'गलत पासवर्ड! कृपया पुनः प्रयास करें अथवा "पासवर्ड भूल गए?" विकल्प का उपयोग करें।',
+      });
+    }
+
+    // Create persistent session (30 days validity)
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    const sessionExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    saveUserSession(sessionToken, user.id, sessionExpiry);
+    devoteeSessions.set(sessionToken, user);
+
+    // Link any pending bookings matching this user's mobile to user.id
+    registrationsStore.forEach((reg) => {
+      if (reg.mobile === user.mobile && !reg.userId) {
+        reg.userId = user.id;
+        insertOrUpdateRegistration(reg as DbRegistration);
+      }
+    });
+    saveToDisk();
+
+    return res.json({
+      success: true,
+      token: sessionToken,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        mobile: user.mobile,
+        email: user.email,
+        city: user.city,
+        gotra: user.gotra,
+        createdAt: user.createdAt,
+      },
+      message: 'सफलतापूर्वक लॉगिन हुआ। स्वागत है!',
+    });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    return res.status(500).json({ error: 'लॉगिन प्रक्रिया में त्रुटि।' });
   }
-
-  const sessionToken = crypto.randomBytes(32).toString('hex');
-  devoteeSessions.set(sessionToken, user);
-
-  return res.json({
-    success: true,
-    token: sessionToken,
-    user: {
-      id: user.id,
-      fullName: user.fullName,
-      mobile: user.mobile,
-      email: user.email,
-      city: user.city,
-      gotra: user.gotra,
-      createdAt: user.createdAt,
-    },
-    message: 'सफलतापूर्वक लॉगिन हुआ।',
-  });
 });
 
+// 5. Get Current Authenticated Devotee Profile
 app.get('/api/user/me', requireDevotee, (req: Request, res: Response) => {
   const user = (req as any).devoteeUser as DbDevoteeUser;
   res.json({
+    success: true,
     user: {
       id: user.id,
       fullName: user.fullName,
@@ -633,7 +874,181 @@ app.get('/api/user/me', requireDevotee, (req: Request, res: Response) => {
   });
 });
 
-// Devotee My Tickets: STRICT PRIVACY!
+// 6. Edit Devotee Profile
+app.put('/api/user/profile', requireDevotee, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).devoteeUser as DbDevoteeUser;
+    const { fullName, email, city, gotra } = req.body;
+
+    if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
+      return res.status(400).json({ error: 'कृपया एक वैध नाम दर्ज करें।' });
+    }
+
+    let cleanEmail = user.email;
+    if (email !== undefined && email !== null) {
+      const trimmedEmail = String(email).trim().toLowerCase();
+      if (trimmedEmail) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedEmail)) {
+          return res.status(400).json({ error: 'अमान्य ईमेल प्रारूप।' });
+        }
+        // If email changed, check if taken by someone else
+        const existingWithEmail = getDevoteeUserByEmail(trimmedEmail);
+        if (existingWithEmail && existingWithEmail.id !== user.id) {
+          return res.status(409).json({ error: 'यह ईमेल पहले से किसी अन्य खाते में उपयोग में है।' });
+        }
+        cleanEmail = trimmedEmail;
+      } else {
+        cleanEmail = undefined;
+      }
+    }
+
+    const updates = {
+      fullName: String(fullName).trim(),
+      email: cleanEmail,
+      city: city ? String(city).trim() : 'नोएडा',
+      gotra: gotra ? String(gotra).trim() : undefined,
+    };
+
+    updateDevoteeProfile(user.id, updates);
+
+    // Update memory cache
+    user.fullName = updates.fullName;
+    user.email = updates.email;
+    user.city = updates.city;
+    user.gotra = updates.gotra;
+
+    // Sync to Supabase
+    try {
+      await supabase.from('devotee_users').update({
+        full_name: updates.fullName,
+        email: updates.email || null,
+        city: updates.city,
+        gotra: updates.gotra || null,
+      }).eq('id', user.id);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        mobile: user.mobile,
+        email: user.email,
+        city: user.city,
+        gotra: user.gotra,
+        createdAt: user.createdAt,
+      },
+      message: 'प्रोफाइल विवरण सफलतापूर्वक अद्यतन हुआ।',
+    });
+  } catch (err: any) {
+    console.error('Update profile error:', err);
+    return res.status(500).json({ error: 'प्रोफाइल अद्यतन करने में त्रुटि।' });
+  }
+});
+
+// 7. Change Password (while logged in)
+app.post('/api/user/change-password', requireDevotee, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).devoteeUser as DbDevoteeUser;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'वर्तमान पासवर्ड एवं नया पासवर्ड दोनों अनिवार्य हैं।' });
+    }
+
+    // Verify current password
+    const currentHash = hashPassword(String(currentPassword));
+    if (user.passwordHash !== currentHash) {
+      return res.status(401).json({ error: 'वर्तमान पासवर्ड गलत है। कृपया सही पासवर्ड दर्ज करें।' });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: 'नया पासवर्ड न्यूनतम 6 अक्षरों का होना अनिवार्य है।' });
+    }
+
+    if (confirmPassword !== undefined && newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'नया पासवर्ड एवं पुष्टि पासवर्ड मेल नहीं खाते हैं।' });
+    }
+
+    const newHash = hashPassword(String(newPassword));
+    updateDevoteePassword(user.mobile, newHash);
+    user.passwordHash = newHash;
+
+    // Sync to Supabase
+    try {
+      await supabase.from('devotee_users').update({ password_hash: newHash }).eq('id', user.id);
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      message: 'आपका पासवर्ड सफलतापूर्वक बदल दिया गया है।',
+    });
+  } catch (err: any) {
+    console.error('Change password error:', err);
+    return res.status(500).json({ error: 'पासवर्ड परिवर्तन में त्रुटि।' });
+  }
+});
+
+// 8. Delete Account (With Re-authentication & Retention Policy Disclosure)
+app.post('/api/user/delete-account', requireDevotee, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).devoteeUser as DbDevoteeUser;
+    const { password, confirmText } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ error: 'खाता हटाने की पुष्टि हेतु वर्तमान पासवर्ड दर्ज करें।' });
+    }
+
+    if (confirmText !== 'DELETE') {
+      return res.status(400).json({ error: 'कृपया पुष्टि हेतु "DELETE" टाइप करें।' });
+    }
+
+    // Re-authenticate
+    const currentHash = hashPassword(String(password));
+    if (user.passwordHash !== currentHash) {
+      return res.status(401).json({ error: 'गलत पासवर्ड! सुरक्षा कारणों से खाता नहीं हटाया जा सका।' });
+    }
+
+    // Execute safe deletion:
+    // 1. Anonymizes past bookings (retains UTR/Token for ashram financial audit)
+    // 2. Deletes devotee user record from SQLite & Supabase
+    // 3. Revokes all active sessions
+    deleteDevoteeAccount(user.id);
+
+    try {
+      await supabase.from('devotee_users').delete().eq('id', user.id);
+    } catch (e) {}
+
+    // Invalidate auth header session
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      devoteeSessions.delete(token);
+    }
+
+    return res.json({
+      success: true,
+      message: 'आपका खाता एवं व्यक्तिगत विवरण सफलतापूर्वक हटा दिया गया है। कानूनी व वित्तीय लेखा-जोखा नीति के अनुसार पूर्व बुकिंग के डिजिटल टोकन सुरक्षित रखे गए हैं।',
+    });
+  } catch (err: any) {
+    console.error('Delete account error:', err);
+    return res.status(500).json({ error: 'खाता हटाने में त्रुटि।' });
+  }
+});
+
+// 9. Devotee Logout
+app.post('/api/user/logout', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    deleteUserSession(token);
+    devoteeSessions.delete(token);
+  }
+  res.json({ success: true, message: 'सफलतापूर्वक लॉगआउट हुआ।' });
+});
+
+// 10. Devotee My Tickets: STRICT PRIVACY!
 // A devotee ONLY sees their own tickets and real-time updates!
 app.get('/api/user/my-tickets', requireDevotee, (req: Request, res: Response) => {
   const user = (req as any).devoteeUser as DbDevoteeUser;
@@ -650,16 +1065,7 @@ app.get('/api/user/my-tickets', requireDevotee, (req: Request, res: Response) =>
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  res.json({ tickets: list, count: list.length });
-});
-
-app.post('/api/user/logout', (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    devoteeSessions.delete(token);
-  }
-  res.json({ success: true, message: 'सफलतापूर्वक लॉगआउट हुआ।' });
+  res.json({ success: true, tickets: list, count: list.length });
 });
 
 // -------------------------------------------------------------
@@ -750,10 +1156,12 @@ app.post('/api/user/forgot-password', async (req: Request, res: Response) => {
       });
     }
 
+    const isDev = process.env.NODE_ENV !== 'production' || process.env.TEST_MODE === 'true';
     return res.json({
       success: true,
       deliveryConfigured: true,
       message: 'यदि यह खाता पंजीकृत है, तो 6-अंकों का सत्यापन कोड आपके पंजीकृत माध्यम पर भेज दिया गया है। यह कोड 10 मिनट के लिए मान्य है।',
+      debugCode: isDev ? (rawOtp || undefined) : undefined,
     });
   } catch (error: any) {
     console.error('Forgot password error:', error);

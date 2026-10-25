@@ -207,3 +207,79 @@ export async function sendAdminRecoveryAlertEmail(
     };
   }
 }
+
+/**
+ * Send Account Registration Verification OTP Email
+ */
+export async function sendAccountVerificationEmail(
+  toEmail: string,
+  otp: string,
+  userName: string = 'यजमान'
+): Promise<DeliveryStatus> {
+  if (!isEmailConfigured()) {
+    console.warn(
+      `[AUTH NOTICE] SMTP is not configured. Verification OTP for ${toEmail}: ${otp} (Set SMTP_HOST, SMTP_USER, SMTP_PASS to enable live email delivery)`
+    );
+    const isDev = process.env.NODE_ENV !== 'production' || process.env.TEST_MODE === 'true';
+    return {
+      success: false,
+      deliveryConfigured: false,
+      channel: 'none',
+      message: 'सर्वर पर ईमेल सेवा (SMTP) अभी सक्रिय नहीं है।',
+      debugCode: isDev ? otp : undefined,
+    };
+  }
+
+  try {
+    const transporter = createTransporter();
+    const fromAddress = process.env.SMTP_FROM || `"भारत उत्कर्ष महायज्ञ 2026" <noreply@bharatutkarsh.org>`;
+
+    const mailOptions = {
+      from: fromAddress,
+      to: toEmail,
+      subject: `[सत्यापन कोड] खाता सक्रियण OTP - भारत उत्कर्ष महायज्ञ 2026`,
+      text: `सादर प्रणाम ${userName} जी,\n\nभारत उत्कर्ष महायज्ञ 2026 में यजमान खाता सक्रिय करने हेतु आपका सुरक्षा सत्यापन कोड है:\n\n${otp}\n\nयह कोड 15 मिनट के लिए मान्य है।\n\nसादर,\nआश्रम व्यवस्थापक मण्डल`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; border: 2px solid #e07a14; border-radius: 16px; overflow: hidden; background: #fffcf7;">
+          <div style="background: linear-gradient(135deg, #240608 0%, #872e18 100%); padding: 24px; text-align: center; color: #ffea79;">
+            <h1 style="margin: 0; font-size: 22px;">भारत उत्कर्ष महायज्ञ 2026</h1>
+            <p style="margin: 6px 0 0; font-size: 13px; color: #fde68a;">खाता सत्यापन एवं सक्रियण</p>
+          </div>
+          <div style="padding: 28px; color: #292524;">
+            <p style="font-size: 15px; margin-top: 0;">सादर प्रणाम <strong>${userName} जी</strong>,</p>
+            <p style="font-size: 14px; line-height: 1.6;">
+              भारत उत्कर्ष महायज्ञ 2026 पोर्टल पर आपका साधक खाता सक्रिय करने हेतु 6-अंकों का सुरक्षा सत्यापन कोड नीचे दिया गया है:
+            </p>
+            <div style="background: #fef3c7; border: 2px dashed #d97706; border-radius: 12px; padding: 18px; text-align: center; margin: 24px 0;">
+              <span style="font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #92400e; font-family: monospace;">${otp}</span>
+              <p style="margin: 8px 0 0; font-size: 12px; color: #b45309; font-weight: 600;">⏱️ यह कोड 15 मिनट के लिए मान्य है</p>
+            </div>
+            <p style="font-size: 12px; color: #78716c; line-height: 1.5;">
+              सुरक्षा चेतावनी: यह कोड किसी के साथ साझा न करें। महायज्ञ समिति का कोई भी प्रतिनिधि आपसे OTP नहीं मांगता है।
+            </p>
+          </div>
+          <div style="background: #f5f5f4; padding: 16px; text-align: center; font-size: 11px; color: #a8a29e; border-top: 1px solid #e7e5e4;">
+            रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304
+          </div>
+        </div>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    return {
+      success: true,
+      deliveryConfigured: true,
+      channel: 'email',
+      message: 'सत्यापन कोड आपके पंजीकृत ईमेल पते पर भेज दिया गया है।',
+    };
+  } catch (error: any) {
+    console.error('SMTP Email dispatch failed:', error);
+    return {
+      success: false,
+      deliveryConfigured: true,
+      channel: 'email',
+      message: `ईमेल प्रेषण में त्रुटि: ${error.message || 'Unknown error'}`,
+    };
+  }
+}
+

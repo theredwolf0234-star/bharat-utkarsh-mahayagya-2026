@@ -64,7 +64,7 @@
     "verificationHash": "1809E075CB86BDCC",
     "paymentDate": "2026-10-25",
     "verifiedBy": "maharishi_admin",
-    "verifiedAt": "2026-10-25T17:32:25.577Z",
+    "verifiedAt": "2026-10-25T17:32:25.577+00:00",
     "isTestMode": false,
     "address": "रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304",
     "createdAt": "2026-10-25T17:32:24.000Z"
@@ -92,5 +92,33 @@
     "isTestMode": false,
     "address": "रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304",
     "createdAt": "2026-10-25T17:50:35.694Z"
+  },
+  {
+    "id": "reg-1792952342948-9F07A8",
+    "token": "MUMY-26-K32-229F07A8",
+    "fullName": "Bhakti Devotee",
+    "husbandName": "Bhakti Devotee",
+    "mobile": "9800111622",
+    "city": "Noida",
+    "kundNumber": 32,
+    "kundCount": 1,
+    "kundNumbers": [
+      32
+    ],
+    "date": "2026-11-03",
+    "timeSlot": "प्रातः 09:00 AM",
+    "participationType": "दंपति",
+    "address": "रामलीला मैदान, महर्षि आश्रम, महर्षि नगर, सेक्टर-110, नोएडा 201304",
+    "personCount": 2,
+    "amount": 5100,
+    "paymentStatus": "paid",
+    "isTestMode": false,
+    "createdAt": "2026-10-25T18:19:02.936Z",
+    "utrNumber": "432152343027",
+    "paymentProofUrl": "https://images.unsplash.com/photo-test-receipt.jpg",
+    "paymentDate": "2026-10-25",
+    "verifiedBy": "maharishi_admin",
+    "verifiedAt": "2026-10-25T18:19:04.507Z",
+    "verificationHash": "4F3B133FCF4FC0D6"
   }
 ]
