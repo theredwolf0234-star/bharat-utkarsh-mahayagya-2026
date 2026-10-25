@@ -30,11 +30,11 @@ export const MaharishiEmblem: React.FC<Props> = ({
       >
         {/* Render uploaded image if available */}
         <img
-          src="image.png"
+          src="/logo.png"
           alt="भारत उत्कर्ष महायज्ञ"
           className="w-full h-full object-contain rounded-full drop-shadow-md"
           onError={(e) => {
-            // If direct image.png is not found, render high-fidelity SVG badge
+            // If direct /logo.png is not found, render high-fidelity SVG badge
             const target = e.target as HTMLElement;
             target.style.display = 'none';
             const fallback = target.nextElementSibling as HTMLElement;

@@ -32,13 +32,13 @@ export const MaharishiPortrait: React.FC<Props> = ({
         <div className="w-full h-full rounded-[50%] p-1 bg-[#441016] overflow-hidden relative border border-[#f5d77f]">
           {/* Portrait Image with fallback to rich SVG representation */}
           <img
-            src="image.png"
+            src="/logo.png"
             alt="परम पूज्य महर्षि महेश योगी जी"
             className="w-full h-full object-cover rounded-[50%] filter contrast-[1.05]"
             onError={(e) => {
-              // Graceful fallback to Wikimedia high-res / spiritual vector portrait
+              // Graceful fallback
               (e.target as HTMLImageElement).src =
-                'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d7/Maharishi_Mahesh_Yogi_1973.jpg/440px-Maharishi_Mahesh_Yogi_1973.jpg';
+                '/logo.jpg';
             }}
           />
           {/* Subtle Golden Sheen overlay */}

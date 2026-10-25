@@ -67,11 +67,13 @@ async function runTests() {
     }
   }
 
-  // Dynamic unique mobile numbers for clean test run
+  // Dynamic unique mobile numbers and date for clean idempotent test run
   const runId = Date.now().toString().slice(-4);
   const mobA = `980011${runId}`;
   const mobB = `980022${runId}`;
-  const testDate = '2026-11-29';
+  const dayOffset = (Date.now() % 20) + 1;
+  const testDate = `2026-11-${String(dayOffset).padStart(2, '0')}`;
+  const testHoldKund = 10 + (Date.now() % 80);
 
   // 1. Health & Server Status
   await test('1. Health check endpoint responds ok with memory & uptime', async () => {
@@ -158,7 +160,7 @@ async function runTests() {
       body: JSON.stringify({
         fullName: 'Bhakti Devotee',
         mobile: mobA,
-        kundNumber: 55,
+        kundNumber: testHoldKund,
         date: testDate,
         amount: 5100,
         city: 'Noida',
@@ -167,7 +169,7 @@ async function runTests() {
     assert.strictEqual(res.status, 201);
     assert.strictEqual(res.body.success, true);
     assert.strictEqual(res.body.registration.paymentStatus, 'temp_hold');
-    assert(res.body.registration.token.startsWith('MUMY-26-K55-'));
+    assert(res.body.registration.token.startsWith(`MUMY-26-K${testHoldKund}-`));
     tempRegData = res.body.registration;
   });
 

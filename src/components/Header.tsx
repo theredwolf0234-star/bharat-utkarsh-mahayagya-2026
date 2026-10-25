@@ -54,8 +54,22 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => setCurrentView('home')}
           className="flex items-center gap-2 hover:opacity-95 transition-opacity text-left cursor-pointer shrink-0"
         >
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-amber-600 to-orange-500 flex items-center justify-center text-white shadow-md border border-amber-300/40 shrink-0">
-            <Flame className="w-4 h-4 sm:w-5 sm:h-5 fill-amber-200 text-amber-100" />
+          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#2c090c] border-2 border-amber-400 shadow-md ring-1 ring-amber-300/40 overflow-hidden shrink-0 flex items-center justify-center">
+            <img
+              src="/logo.png"
+              alt="भारत उत्कर्ष महायज्ञ लोगो"
+              className="w-full h-full object-cover object-center"
+              onError={(e) => {
+                const target = e.currentTarget;
+                target.style.display = 'none';
+                if (target.nextElementSibling) {
+                  (target.nextElementSibling as HTMLElement).style.display = 'flex';
+                }
+              }}
+            />
+            <div className="hidden w-full h-full items-center justify-center bg-gradient-to-tr from-amber-600 to-orange-500">
+              <Flame className="w-4 h-4 sm:w-5 sm:h-5 fill-amber-200 text-amber-100" />
+            </div>
           </div>
           <div className="min-w-0">
             <span className="font-serif font-black text-sm sm:text-xl text-amber-200 tracking-wide block leading-tight whitespace-nowrap">
