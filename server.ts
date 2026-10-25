@@ -59,6 +59,15 @@ import {
 
 dotenv.config();
 
+// Crash Protection: Intercept unhandled errors so Node.js process never terminates
+process.on('uncaughtException', (err) => {
+  console.error('🛡️ [Safety Guard] Uncaught Exception intercepted:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🛡️ [Safety Guard] Unhandled Rejection intercepted at:', promise, 'reason:', reason);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -223,7 +232,7 @@ loadFromDisk();
 
 // Initialize Embedded SQLite Database engine
 initSqliteDatabase()
-  .then(() => {
+  .then(async () => {
     const dbRecords = getAllRegistrationsFromDb();
     if (dbRecords.length > 0) {
       dbRecords.forEach((item) => {
@@ -237,6 +246,22 @@ initSqliteDatabase()
         insertOrUpdateRegistration(item as DbRegistration);
       });
     }
+
+    // Auto-sync with Supabase on startup (Restores bookings if Render restarted on a fresh container)
+    try {
+      await syncDatabaseWithSupabase();
+      const freshRecords = getAllRegistrationsFromDb();
+      freshRecords.forEach((item) => {
+        registrationsStore.set(item.id, item as StoredRegistration);
+        if (item.utrNumber && item.utrNumber !== 'COUNTER-PAY-ON-DAY') {
+          usedUtrs.add(item.utrNumber);
+        }
+      });
+      console.log(`☁️ Supabase cloud synchronization restored ${registrationsStore.size} bookings.`);
+    } catch (e: any) {
+      console.warn('Supabase startup sync notice:', e?.message || e);
+    }
+
     const dbAdmin = getAdminUserFromDb();
     if (dbAdmin) {
       registeredAdmin = {
@@ -251,6 +276,19 @@ initSqliteDatabase()
   .catch((err) => {
     console.warn('SQLite initialization warning:', err);
   });
+
+// -------------------------------------------------------------
+// Health Check Endpoint (For Uptime Monitors to keep Render awake 24/7)
+// -------------------------------------------------------------
+app.get('/api/health', (req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    totalBookings: registrationsStore.size,
+    memoryUsageMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+  });
+});
 
 function hashPassword(pass: string): string {
   return crypto.createHmac('sha256', PAYMENT_SECRET_KEY).update(pass).digest('hex');

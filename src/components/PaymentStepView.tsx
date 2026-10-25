@@ -90,13 +90,43 @@ export const PaymentStepView: React.FC<PaymentStepViewProps> = ({
   const handleScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('फ़ाइल का आकार 5MB से कम होना चाहिए।');
+    if (file.size > 15 * 1024 * 1024) {
+      setErrorMsg('फ़ाइल का आकार बहुत बड़ा है। कृपया 15MB से कम आकार की फ़ाइल चुनें।');
       return;
     }
     const reader = new FileReader();
     reader.onload = (uploadEvt) => {
-      setScreenshotData(uploadEvt.target?.result as string);
+      const rawDataUrl = uploadEvt.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        // Compress and downscale on canvas to prevent mobile Out-Of-Memory (OOM) crashes
+        const maxDim = 1200;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          setScreenshotData(canvas.toDataURL('image/jpeg', 0.8));
+        } else {
+          setScreenshotData(rawDataUrl);
+        }
+      };
+      img.onerror = () => {
+        setScreenshotData(rawDataUrl);
+      };
+      img.src = rawDataUrl;
     };
     reader.readAsDataURL(file);
   };

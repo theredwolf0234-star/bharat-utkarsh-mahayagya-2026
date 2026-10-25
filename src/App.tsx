@@ -90,26 +90,27 @@ export default function App() {
     } catch (e) {}
   }, [auditLogs]);
 
-  // Synchronize live bookings with backend server every 4 seconds
+  // Synchronize live bookings with backend server
   useEffect(() => {
     const syncServerBookings = async () => {
+      // Do not poll when the app or tab is hidden in background to save battery & prevent server overload
+      if (typeof document !== 'undefined' && document.hidden) return;
+
       try {
-        const res = await fetch('/api/admin/bookings', {
-          headers: { Authorization: 'Bearer maharishi_master_session_token' },
-        });
+        const res = await fetch('/api/registrations');
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data.bookings)) {
-            setRegistrations(data.bookings);
+          if (Array.isArray(data.registrations)) {
+            setRegistrations(data.registrations);
           }
         }
       } catch (e) {
-        // Ignore offline
+        // Silently ignore offline network disconnects
       }
     };
 
     syncServerBookings();
-    const interval = setInterval(syncServerBookings, 4000);
+    const interval = setInterval(syncServerBookings, 8000);
     return () => clearInterval(interval);
   }, []);
 
