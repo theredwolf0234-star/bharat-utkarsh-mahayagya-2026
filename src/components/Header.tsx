@@ -46,15 +46,15 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-[#240608] text-amber-100 border-b-2 border-amber-600/50 shadow-md">
-      <div className="max-w-7xl mx-auto px-2.5 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2">
+    <header className="sticky top-0 z-40 bg-[#240608] text-amber-100 border-b-2 border-amber-600/50 shadow-md safe-top w-full max-w-full">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-3 w-full">
         {/* Brand Logo & Event Name */}
         <button
           type="button"
           onClick={() => setCurrentView('home')}
-          className="flex items-center gap-2 hover:opacity-95 transition-opacity text-left cursor-pointer shrink-0"
+          className="flex items-center gap-1.5 sm:gap-2.5 hover:opacity-95 transition-opacity text-left cursor-pointer min-w-0 shrink"
         >
-          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#2c090c] border-2 border-amber-400 shadow-md ring-1 ring-amber-300/40 overflow-hidden shrink-0 flex items-center justify-center">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#2c090c] border-2 border-amber-400 shadow-md ring-1 ring-amber-300/40 overflow-hidden shrink-0 flex items-center justify-center">
             <img
               src="/logo.png"
               alt="भारत उत्कर्ष महायज्ञ लोगो"
@@ -71,51 +71,53 @@ export const Header: React.FC<HeaderProps> = ({
               <Flame className="w-4 h-4 sm:w-5 sm:h-5 fill-amber-200 text-amber-100" />
             </div>
           </div>
-          <div className="min-w-0">
-            <span className="font-serif font-black text-sm sm:text-xl text-amber-200 tracking-wide block leading-tight whitespace-nowrap">
-              भारत उत्कर्ष महायज्ञ 2026
+          <div className="min-w-0 truncate">
+            <span className="font-serif font-black text-xs min-[360px]:text-sm sm:text-xl text-amber-200 tracking-wide block leading-tight truncate">
+              <span className="hidden min-[380px]:inline">भारत उत्कर्ष महायज्ञ 2026</span>
+              <span className="min-[380px]:hidden inline">भारत उत्कर्ष 2026</span>
             </span>
-            <span className="text-[11px] text-amber-300/80 font-medium hidden md:block">
+            <span className="text-[11px] text-amber-300/80 font-medium hidden md:block truncate">
               108 हवन कुंड बुकिंग पोर्टल • रामलीला मैदान, महर्षि आश्रम, नोएडा
             </span>
           </div>
         </button>
 
-        {/* Clean Top Action Bar (No Double/Crowded Tabs) */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* Clean Top Action Bar - Perfectly Aligned, No Floating, No Cut-Off */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Direct Hawan Kund Booking CTA */}
           <button
             type="button"
             onClick={() => onStartBooking(null)}
-            className={`flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 rounded-xl transition-all cursor-pointer font-bold text-xs sm:text-sm whitespace-nowrap shadow-sm ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 rounded-xl transition-all cursor-pointer font-extrabold text-xs sm:text-sm whitespace-nowrap shadow-sm shrink-0 ${
               currentView === 'register'
                 ? 'bg-[#8a1523] text-white border-2 border-amber-400'
-                : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-stone-950 font-extrabold border border-amber-300'
+                : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-stone-950 border border-amber-300'
             }`}
+            title="108 हवन कुंड ऑनलाइन बुक करें"
           >
             <Flame className="w-3.5 h-3.5 fill-current shrink-0" />
-            <span className="hidden min-[400px]:inline">हवन कुंड बुकिंग</span>
-            <span className="min-[400px]:hidden">बुकिंग</span>
+            <span className="hidden min-[480px]:inline">हवन कुंड बुकिंग</span>
+            <span className="min-[480px]:hidden">बुक करें</span>
           </button>
 
-          {/* Direct APK Download Button */}
+          {/* Direct APK Download Button - Visible on screens >= 640px (sm:) */}
+          {/* On mobile screens, APK download is prominently available in the Menu Dropdown & Hero Section without cramming the 360px header */}
           <a
             href="/yagya2026.apk"
             download="Bharat-Utkarsh-Mahayagya-2026.apk"
-            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold border border-emerald-400/50 shadow-sm whitespace-nowrap text-xs sm:text-sm"
+            className="hidden sm:flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold border border-emerald-400/50 shadow-sm whitespace-nowrap text-xs sm:text-sm shrink-0"
             title="एंड्रॉयड ऐप डाउनलोड करें (Direct APK)"
           >
             <Smartphone className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden sm:inline">📱 ऐप डाउनलोड</span>
-            <span className="sm:hidden">ऐप</span>
+            <span>📱 ऐप</span>
           </a>
 
-          {/* Sleek Profile & Menu Bar Button */}
-          <div className="relative">
+          {/* Sleek Profile & Menu Bar Button - Always fully visible, never clipped at screen edge */}
+          <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer border shadow-xs text-xs sm:text-sm font-semibold whitespace-nowrap ${
+              className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl transition-all cursor-pointer border shadow-xs text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 ${
                 isMenuOpen
                   ? 'bg-amber-400 text-stone-950 border-amber-300 font-bold'
                   : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-400/40'
@@ -126,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="w-5 h-5 rounded-full bg-amber-400/30 flex items-center justify-center text-amber-200 shrink-0">
                 <User className="w-3 h-3 text-current" />
               </div>
-              <span className="max-w-[80px] min-[420px]:max-w-[120px] truncate">
+              <span className="hidden min-[440px]:inline max-w-[80px] sm:max-w-[120px] truncate">
                 {currentUser ? currentUser.fullName.split(' ')[0] : 'प्रोफाइल'}
               </span>
               {isMenuOpen ? (
@@ -146,9 +148,9 @@ export const Header: React.FC<HeaderProps> = ({
                 />
 
                 {/* Dropdown Card */}
-                <div className="fixed sm:absolute right-2 sm:right-0 top-16 z-50 w-[92vw] max-w-xs sm:w-80 bg-stone-900 border-2 border-amber-500/60 rounded-2xl shadow-2xl overflow-hidden text-stone-100 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="fixed sm:absolute right-2 sm:right-0 top-14 sm:top-16 z-50 w-[calc(100vw-16px)] max-w-xs sm:w-80 bg-stone-900 border-2 border-amber-500/60 rounded-2xl shadow-2xl overflow-hidden text-stone-100 max-h-[85vh] flex flex-col animate-in fade-in slide-in-from-top-2 duration-150">
                   {/* Devotee Profile Header */}
-                  <div className="bg-gradient-to-r from-[#4a0e17] to-[#240608] p-3.5 border-b border-amber-600/40">
+                  <div className="bg-gradient-to-r from-[#4a0e17] to-[#240608] p-3.5 border-b border-amber-600/40 shrink-0">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-stone-950 font-bold shadow-md border border-amber-300/60 shrink-0">
                         <User className="w-5 h-5 text-stone-950" />
@@ -171,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
 
                   {/* Menu Links */}
-                  <div className="p-2 space-y-1 text-xs sm:text-sm">
+                  <div className="p-2 space-y-1 text-xs sm:text-sm overflow-y-auto flex-1">
                     <button
                       type="button"
                       onClick={() => handleNav(() => setCurrentView('home'))}

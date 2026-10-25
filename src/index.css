@@ -29,6 +29,13 @@
     min-height: 100vh;
   }
 
+  #root {
+    overflow-x: hidden;
+    max-width: 100%;
+    width: 100%;
+    min-height: 100vh;
+  }
+
   img, svg, video, canvas, audio, iframe, embed, object {
     max-width: 100%;
     height: auto;
