@@ -135,3 +135,25 @@
     display: none;
   }
 }
+
+/* iOS Safe Area Insets for iPhones with notches and home indicator bars */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-left {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.safe-right {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Ensure smooth touch interactions on mobile */
+@media (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents auto-zoom on iOS Safari focus */
+  }
+}
+

@@ -13,7 +13,7 @@ import {
   Loader2,
   ArrowLeft,
 } from 'lucide-react';
-import { DevoteeUser, Registration, KundSummary, KundLiveItem } from '../types/yagya';
+import { DevoteeUser, Registration, KundSummary, KundLiveItem, RegistrationDraft } from '../types/yagya';
 import {
   YAGYA_DATES,
   YAGYA_TIME,
@@ -35,6 +35,8 @@ interface RegistrationStepViewProps {
   kundSummary: KundSummary;
   registrations: Registration[];
   onBack?: () => void;
+  draftData?: Partial<RegistrationDraft>;
+  onDraftChange?: (draft: Partial<RegistrationDraft>) => void;
 }
 
 export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
@@ -48,27 +50,31 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
   kundSummary,
   registrations,
   onBack,
+  draftData,
+  onDraftChange,
 }) => {
-  const [fullName, setFullName] = useState(currentUser?.fullName || '');
-  const [wifeName, setWifeName] = useState('');
-  const [mobile, setMobile] = useState(currentUser?.mobile || '');
-  const [email, setEmail] = useState(currentUser?.email || '');
-  const [city, setCity] = useState(currentUser?.city || 'नोएडा');
-  const [gotra, setGotra] = useState(currentUser?.gotra || '');
+  const [fullName, setFullName] = useState(draftData?.fullName || currentUser?.fullName || '');
+  const [wifeName, setWifeName] = useState(draftData?.wifeName || '');
+  const [mobile, setMobile] = useState(draftData?.mobile || currentUser?.mobile || '');
+  const [email, setEmail] = useState(draftData?.email || currentUser?.email || '');
+  const [city, setCity] = useState(draftData?.city || currentUser?.city || 'नोएडा');
+  const [gotra, setGotra] = useState(draftData?.gotra || currentUser?.gotra || '');
 
-  const [accountPassword, setAccountPassword] = useState('');
+  const [accountPassword, setAccountPassword] = useState(draftData?.accountPassword || '');
   const [isExistingLoginMode, setIsExistingLoginMode] = useState(false);
   const [loginPassword, setLoginPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
-  const [date, setDate] = useState(selectedDate || YAGYA_DATES[0].date);
-  const [timeSlot, setTimeSlot] = useState('9:00 AM (प्रातः 09:00 AM)');
-  const [participationType, setParticipationType] = useState(PARTICIPATION_TYPES[0].label);
+  const [date, setDate] = useState(draftData?.date || selectedDate || YAGYA_DATES[0].date);
+  const [timeSlot, setTimeSlot] = useState(draftData?.timeSlot || '9:00 AM (प्रातः 09:00 AM)');
+  const [participationType, setParticipationType] = useState(draftData?.participationType || PARTICIPATION_TYPES[0].label);
   const [kundCount] = useState<number>(1); // Single kund per registered number
-  const [selectedKunds, setSelectedKunds] = useState<number[]>([
-    initialKund && initialKund > RESERVED_KUNDS_COUNT ? initialKund : 10,
-  ]);
+  const [selectedKunds, setSelectedKunds] = useState<number[]>(
+    draftData?.selectedKunds && draftData.selectedKunds.length > 0
+      ? draftData.selectedKunds
+      : [initialKund && initialKund > RESERVED_KUNDS_COUNT ? initialKund : 10]
+  );
   const [formError, setFormError] = useState('');
   const [isLocking, setIsLocking] = useState(false);
 
@@ -76,9 +82,13 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
   const [liveKunds, setLiveKunds] = useState<KundLiveItem[]>([]);
 
   // Multiple Dakshina Options (Not fixed: 2100, 5100, 100000, and Custom)
-  const [selectedDakshina, setSelectedDakshina] = useState<number>(2100);
-  const [isCustomDakshina, setIsCustomDakshina] = useState<boolean>(false);
-  const [customAmountText, setCustomAmountText] = useState<string>('');
+  const [selectedDakshina, setSelectedDakshina] = useState<number>(draftData?.selectedDakshina || 2100);
+  const [isCustomDakshina, setIsCustomDakshina] = useState<boolean>(draftData?.isCustomDakshina || false);
+  const [customAmountText, setCustomAmountText] = useState<string>(draftData?.customAmountText || '');
+
+  const syncField = (key: keyof RegistrationDraft, val: any) => {
+    onDraftChange?.({ [key]: val });
+  };
 
   const finalDakshinaAmount = isCustomDakshina
     ? (Number(customAmountText) > 0 ? Number(customAmountText) : 2100)
@@ -86,23 +96,27 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
   const totalAmount = finalDakshinaAmount;
 
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && !draftData?.fullName) {
       setFullName(currentUser.fullName);
+      syncField('fullName', currentUser.fullName);
       setMobile(currentUser.mobile);
-      if (currentUser.city) setCity(currentUser.city);
-      if (currentUser.gotra) setGotra(currentUser.gotra);
-      if (currentUser.email) setEmail(currentUser.email);
+      syncField('mobile', currentUser.mobile);
+      if (currentUser.city) { setCity(currentUser.city); syncField('city', currentUser.city); }
+      if (currentUser.gotra) { setGotra(currentUser.gotra); syncField('gotra', currentUser.gotra); }
+      if (currentUser.email) { setEmail(currentUser.email); syncField('email', currentUser.email); }
     }
   }, [currentUser]);
 
   useEffect(() => {
-    if (initialKund && initialKund > RESERVED_KUNDS_COUNT) {
+    if (initialKund && initialKund > RESERVED_KUNDS_COUNT && !draftData?.selectedKunds) {
       setSelectedKunds([initialKund]);
+      syncField('selectedKunds', [initialKund]);
     }
   }, [initialKund]);
 
   const handleSelectKund = (kundNum: number) => {
     setSelectedKunds([kundNum]);
+    syncField('selectedKunds', [kundNum]);
   };
 
   const cleanMob = mobile.replace(/\D/g, '').slice(-10);
@@ -429,7 +443,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                 required
                 placeholder="उदा. राम प्रसाद शर्मा"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => {
+                  setFullName(e.target.value);
+                  syncField('fullName', e.target.value);
+                }}
                 className="w-full px-3 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm"
               />
             </div>
@@ -442,7 +459,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                 type="text"
                 placeholder="उदा. श्रीमती सीता शर्मा"
                 value={wifeName}
-                onChange={(e) => setWifeName(e.target.value)}
+                onChange={(e) => {
+                  setWifeName(e.target.value);
+                  syncField('wifeName', e.target.value);
+                }}
                 className="w-full px-3 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm"
               />
             </div>
@@ -457,7 +477,11 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                 maxLength={10}
                 placeholder="9876543210"
                 value={mobile}
-                onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setMobile(val);
+                  syncField('mobile', val);
+                }}
                 className="w-full px-3 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm font-mono"
               />
             </div>
@@ -472,7 +496,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                   required
                   placeholder="कम से कम 4 अक्षर या अंक"
                   value={accountPassword}
-                  onChange={(e) => setAccountPassword(e.target.value)}
+                  onChange={(e) => {
+                    setAccountPassword(e.target.value);
+                    syncField('accountPassword', e.target.value);
+                  }}
                   className="w-full px-3 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm"
                 />
               </div>
@@ -487,7 +514,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                 required
                 placeholder="उदा. नोएडा / दिल्ली"
                 value={city}
-                onChange={(e) => setCity(e.target.value)}
+                onChange={(e) => {
+                  setCity(e.target.value);
+                  syncField('city', e.target.value);
+                }}
                 className="w-full px-3 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm"
               />
             </div>
@@ -500,7 +530,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                 type="text"
                 placeholder="उदा. कश्यप / भारद्वाज"
                 value={gotra}
-                onChange={(e) => setGotra(e.target.value)}
+                onChange={(e) => {
+                  setGotra(e.target.value);
+                  syncField('gotra', e.target.value);
+                }}
                 className="w-full px-3 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm"
               />
             </div>
@@ -532,6 +565,8 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                     onClick={() => {
                       setSelectedDakshina(opt.amount);
                       setIsCustomDakshina(false);
+                      syncField('selectedDakshina', opt.amount);
+                      syncField('isCustomDakshina', false);
                     }}
                     className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer flex flex-col justify-center items-center gap-1 ${
                       isSelected
@@ -556,7 +591,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
 
               <button
                 type="button"
-                onClick={() => setIsCustomDakshina(true)}
+                onClick={() => {
+                  setIsCustomDakshina(true);
+                  syncField('isCustomDakshina', true);
+                }}
                 className={`p-3 rounded-2xl border-2 text-center transition-all cursor-pointer flex flex-col justify-center items-center gap-1 ${
                   isCustomDakshina
                     ? 'border-[#872e18] bg-amber-50 shadow-md ring-2 ring-amber-400'
@@ -590,7 +628,11 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                     step={100}
                     placeholder="उदा. 11000, 21000, 51000..."
                     value={customAmountText}
-                    onChange={(e) => setCustomAmountText(e.target.value)}
+                    onChange={(e) => {
+                      setCustomAmountText(e.target.value);
+                      syncField('customAmountText', e.target.value);
+                      syncField('isCustomDakshina', true);
+                    }}
                     className="w-full pl-8 pr-3 py-2 bg-white border-2 border-amber-400 rounded-xl text-stone-900 font-bold text-sm"
                     autoFocus
                   />
@@ -614,7 +656,10 @@ export const RegistrationStepView: React.FC<RegistrationStepViewProps> = ({
                 </label>
                 <select
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={(e) => {
+                    setDate(e.target.value);
+                    syncField('date', e.target.value);
+                  }}
                   className="w-full px-3 py-2.5 bg-white border border-stone-300 rounded-xl text-xs sm:text-sm font-bold text-stone-900 cursor-pointer shadow-2xs"
                 >
                   {YAGYA_DATES.map((d) => (

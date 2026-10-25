@@ -232,3 +232,21 @@ export interface KundLiveItem {
     paymentStatus: PaymentStatus;
   };
 }
+
+export interface RegistrationDraft {
+  fullName: string;
+  wifeName: string;
+  mobile: string;
+  email: string;
+  city: string;
+  gotra: string;
+  accountPassword?: string;
+  date: string;
+  timeSlot: string;
+  participationType: string;
+  selectedKunds: number[];
+  selectedDakshina: number;
+  isCustomDakshina: boolean;
+  customAmountText: string;
+}
+
