@@ -1450,7 +1450,7 @@ export const AdminPortalModal: React.FC<AdminPortalModalProps> = ({
                           Supabase PostgreSQL & SQLite Engine
                         </div>
                         <div className="text-xs text-stone-500 font-mono">
-                          प्रोजेक्ट: zpbnsolzmrsyoddxzaqj • टेबल: devotee_users, registrations, audit_logs
+                          प्रोजेक्ट: orsowcqfebzbojnrnncz • टेबल: devotee_users, registrations, audit_logs
                         </div>
                       </div>
                     </div>

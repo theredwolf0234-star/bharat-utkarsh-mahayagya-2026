@@ -11,6 +11,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: SUPABASE_URL
-        value: https://zpbnsolzmrsyoddxzaqj.supabase.co
+        value: https://orsowcqfebzbojnrnncz.supabase.co
       - key: SUPABASE_ANON_KEY
-        value: sb_publishable_WW-vmr513N7070fDU-unOA__9Jl0lCe
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yc293Y3FmZWJ6Ym9qbnJubmN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5MzI4NDEsImV4cCI6MjEwODUwODg0MX0.DpyyXXGhIIW86arbxB8fkQuoe-LI8h-KjbAXQMl2Ins
+

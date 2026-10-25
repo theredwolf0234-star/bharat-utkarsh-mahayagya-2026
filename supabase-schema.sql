@@ -1,12 +1,12 @@
 -- ==============================================================================
 -- MAHARISHI BHARAT UTKARSH MAHA YAGYA 2026
 -- COMPLETE SUPABASE DATABASE & STORAGE SCHEMA (UPDATED WITH DEVOTEE USER AUTH & RLS)
--- Project ID: zpbnsolzmrsyoddxzaqj
--- Project URL: https://zpbnsolzmrsyoddxzaqj.supabase.co
+-- Project ID: orsowcqfebzbojnrnncz
+-- Project URL: https://orsowcqfebzbojnrnncz.supabase.co
 -- Official Venue GPS: https://maps.app.goo.gl/aFmMAF5gFHR46gBGA
 -- ==============================================================================
 -- INSTRUCTIONS:
--- 1. Open your Supabase Dashboard: https://supabase.com/dashboard/project/zpbnsolzmrsyoddxzaqj/sql
+-- 1. Open your Supabase Dashboard: https://supabase.com/dashboard/project/orsowcqfebzbojnrnncz/editor
 -- 2. Click "+ New query", paste this entire script, and click "Run" (Ctrl+Enter).
 -- ==============================================================================
 

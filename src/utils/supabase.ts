@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { Registration, AuditLog, SystemSettings } from '../types/yagya';
 
-export const SUPABASE_PROJECT_ID = 'zpbnsolzmrsyoddxzaqj';
-export const SUPABASE_URL = 'https://zpbnsolzmrsyoddxzaqj.supabase.co';
-export const SUPABASE_KEY = 'sb_publishable_WW-vmr513N7070fDU-unOA__9Jl0lCe';
+export const SUPABASE_PROJECT_ID = 'orsowcqfebzbojnrnncz';
+export const SUPABASE_URL = 'https://orsowcqfebzbojnrnncz.supabase.co';
+export const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yc293Y3FmZWJ6Ym9qbnJubmN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5MzI4NDEsImV4cCI6MjEwODUwODg0MX0.DpyyXXGhIIW86arbxB8fkQuoe-LI8h-KjbAXQMl2Ins';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -219,8 +219,8 @@ export async function logAuditAction(entry: Omit<AuditLog, 'id' | 'timestamp'>):
 
 export const SUPABASE_SQL_SCHEMA = `-- ==============================================================================
 -- MAHARISHI BHARAT UTKARSH MAHA YAGYA 2026 - FULL SUPABASE SQL SCHEMA
--- Project ID: zpbnsolzmrsyoddxzaqj
--- Project URL: https://zpbnsolzmrsyoddxzaqj.supabase.co
+-- Project ID: orsowcqfebzbojnrnncz
+-- Project URL: https://orsowcqfebzbojnrnncz.supabase.co
 -- ==============================================================================
 
 -- 1. Create table for registrations with temporary holds & admin verification

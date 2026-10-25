@@ -34,9 +34,9 @@ async function main() {
     console.warn('⚠️ SQLite में पासवर्ड अपडेट विफल रहा।');
   }
 
-  // 2. Update Supabase Database
-  const SUPABASE_URL = process.env.SUPABASE_URL || 'https://zpbnsolzmrsyoddxzaqj.supabase.co';
-  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_WW-vmr513N7070fDU-unOA__9Jl0lCe';
+  const SUPABASE_URL = process.env.SUPABASE_URL || 'https://orsowcqfebzbojnrnncz.supabase.co';
+  const SUPABASE_ANON_KEY =
+    process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9yc293Y3FmZWJ6Ym9qbnJubmN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5MzI4NDEsImV4cCI6MjEwODUwODg0MX0.DpyyXXGhIIW86arbxB8fkQuoe-LI8h-KjbAXQMl2Ins';
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
